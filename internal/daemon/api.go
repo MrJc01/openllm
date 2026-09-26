@@ -177,6 +177,7 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	payload.ExcludeMachineIDs = append(payload.ExcludeMachineIDs, s.manager.BadHosts()...)
 	if len(payload.ExcludeMachineIDs) > 0 {
 		excluded := make(map[string]bool, len(payload.ExcludeMachineIDs))
 		for _, id := range payload.ExcludeMachineIDs {

@@ -58,6 +58,60 @@ type InstanceManager struct {
 	pingsMu     sync.RWMutex
 	logs        map[string][]string
 	logsMu      sync.RWMutex
+	// badHosts: máquinas físicas que falharam no pull da imagem; /search as
+	// evita por badHostTTL (host sem rede costuma continuar sem rede).
+	badHosts   map[string]time.Time
+	badHostsMu sync.Mutex
+}
+
+const badHostTTL = 24 * time.Hour
+
+func (m *InstanceManager) markBadHost(hostID string) {
+	if hostID == "" || hostID == "0" {
+		return
+	}
+	m.badHostsMu.Lock()
+	defer m.badHostsMu.Unlock()
+	m.loadBadHostsLocked()
+	m.badHosts[hostID] = time.Now()
+	if data, err := json.Marshal(m.badHosts); err == nil {
+		_ = ioutil.WriteFile(badHostsPath(), data, 0600)
+	}
+}
+
+// badHostsPath: persistido no state dir (.openllm) para sobreviver a restarts.
+func badHostsPath() string {
+	dir, err := config.GetStateDir()
+	if err != nil {
+		dir = config.StateDirName
+	}
+	return filepath.Join(dir, "bad_hosts.json")
+}
+
+func (m *InstanceManager) loadBadHostsLocked() {
+	if m.badHosts != nil {
+		return
+	}
+	m.badHosts = map[string]time.Time{}
+	if data, err := ioutil.ReadFile(badHostsPath()); err == nil {
+		_ = json.Unmarshal(data, &m.badHosts)
+	}
+}
+
+// BadHosts devolve os hosts ainda dentro do TTL de exclusão.
+func (m *InstanceManager) BadHosts() []string {
+	m.badHostsMu.Lock()
+	defer m.badHostsMu.Unlock()
+	m.loadBadHostsLocked()
+	var out []string
+	for id, at := range m.badHosts {
+		if time.Since(at) < badHostTTL {
+			out = append(out, id)
+		} else {
+			delete(m.badHosts, id)
+		}
+	}
+	return out
 }
 
 func NewInstanceManager(db *storage.DB, ps *proxy.ProxyServer) *InstanceManager {
@@ -284,7 +338,8 @@ WaitLoop:
 			if sshInfo.Status != "running" && strings.Contains(sshInfo.StatusMsg, "Error response from daemon") {
 				pullErrors++
 				if pullErrors >= maxPullErrors {
-					log.Printf("[%s] Error: host cannot pull image: %s", inst.ID, strings.TrimSpace(sshInfo.StatusMsg))
+					log.Printf("[%s] Error: host %s cannot pull image: %s", inst.ID, sshInfo.MachineID, strings.TrimSpace(sshInfo.StatusMsg))
+					m.markBadHost(sshInfo.MachineID)
 					m.failSetup(cfg, inst, "host cannot pull docker image: "+strings.TrimSpace(sshInfo.StatusMsg), destroyOnFail)
 					return
 				}

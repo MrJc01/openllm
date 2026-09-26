@@ -94,10 +94,11 @@ var registry = map[string]Definition{
 		ReadyTimeout:  15,
 		ModelPullCmd:  "ollama pull {{.Model}}",
 		ModelReadyCmd: "ollama list | grep -q {{.Model}}",
-		// generate sem prompt só carrega o modelo; modelos de embedding não
-		// aceitam generate, então cai para /api/embed.
-		WarmupCmd: `curl -sf -m 300 http://127.0.0.1:11434/api/generate -d '{"model":"{{.Model}}","keep_alive":"30m"}' >/dev/null || ` +
-			`curl -sf -m 300 http://127.0.0.1:11434/api/embed -d '{"model":"{{.Model}}","input":"","keep_alive":"30m"}' >/dev/null`,
+		// Gera 1 token (não só carrega): o 1º forward pass também paga a
+		// inicialização de kernels CUDA. Modelos de embedding não aceitam
+		// generate, então cai para /api/embed.
+		WarmupCmd: `curl -sf -m 300 http://127.0.0.1:11434/api/generate -d '{"model":"{{.Model}}","prompt":"hi","stream":false,"keep_alive":"30m","options":{"num_predict":1}}' >/dev/null || ` +
+			`curl -sf -m 300 http://127.0.0.1:11434/api/embed -d '{"model":"{{.Model}}","input":"hi","keep_alive":"30m"}' >/dev/null`,
 	},
 	"localai": {
 		Name:         "localai",
