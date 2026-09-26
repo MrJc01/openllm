@@ -57,8 +57,8 @@ type Definition struct {
 	// downloads longos.
 	ModelPullCmd string `json:"model_pull_cmd"`
 
-// ModelReadyCmd é o comando SSH que retorna exit 0 quando o modelo está
-// disponível (ex: "ollama list | grep -q {{.Model}}"). Suporta {{.Model}}.
+	// ModelReadyCmd é o comando SSH que retorna exit 0 quando o modelo está
+	// disponível (ex: "ollama list | grep -q {{.Model}}"). Suporta {{.Model}}.
 	ModelReadyCmd string `json:"model_ready_cmd"`
 
 	// WarmupCmd (opcional) roda via SSH logo após o modelo ficar pronto e
@@ -81,15 +81,15 @@ type Definition struct {
 
 var registry = map[string]Definition{
 	"ollama": {
-		Name:          "ollama",
-		Modality:      []string{"text", "embedding"},
-		RemotePort:    11434,
-		DefaultVRAM:   8,
+		Name:        "ollama",
+		Modality:    []string{"text", "embedding"},
+		RemotePort:  11434,
+		DefaultVRAM: 8,
 		// Imagem/tag do template oficial Vast "Ollama" (maior chance de cache
 		// no host). O entrypoint sobe o ollama em 127.0.0.1:11434 e já inicia
 		// o pull de OLLAMA_MODEL no boot, antes do SSH ficar disponível.
-		DockerImage:   "vastai/ollama:0.34.0",
-		OnStartCmd:    "entrypoint.sh",
+		DockerImage: "vastai/ollama:0.34.0",
+		OnStartCmd:  "entrypoint.sh",
 		Env: map[string]string{
 			"OLLAMA_MODEL":   "{{.Model}}",
 			"DATA_DIRECTORY": "/workspace/",
@@ -172,10 +172,10 @@ var registry = map[string]Definition{
 		DiskGB: 50, // 70B models: ~40GB VRAM + model weights on disk
 	},
 	"comfyui": {
-		Name:         "comfyui",
-		Modality:     []string{"image", "video"},
-		RemotePort:   18188,
-		DefaultVRAM:  12,
+		Name:        "comfyui",
+		Modality:    []string{"image", "video"},
+		RemotePort:  18188,
+		DefaultVRAM: 12,
 		// cu126-megapak: a variante FULL (Debian com apt — as cu130/slim são
 		// apt-less e o entrypoint do vast.ai não consegue instalar sshd nelas,
 		// o SSH nunca sobe). Compatível com Ada/Ampere (sm_86/sm_89).
@@ -185,33 +185,33 @@ var registry = map[string]Definition{
 		MinCUDA:     13.2,
 		OnStartCmd:  "entrypoint.sh",
 		Env: map[string]string{
-			"COMFYUI_ARGS":                   "--disable-auto-launch --disable-xformers --port 18188 --enable-cors-header",
-			"COMFYUI_API_BASE":               "http://localhost:18188",
-			"PROVISIONING_COMFYUI_WORKFLOWS": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/templates/sdxlturbo_example.json",
-			// Checkpoint baixado direto do HF (o provisioning do workflow pode
-			// não baixar modelos); o ModelReadyCmd abaixo espera por ele.
-			"PROVISIONING_COMFYUI_CHECKPOINTS": "https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors",
-			"DATA_DIRECTORY":                 "/workspace/",
+			"COMFYUI_ARGS":     "--disable-auto-launch --disable-xformers --port 18188 --enable-cors-header",
+			"COMFYUI_API_BASE": "http://localhost:18188",
+			// Sem PROVISIONING_*: o provisioning baixava ~7GB do HF antes de
+			// subir o ComfyUI (2h num host com HF lento). A imagem já traz o
+			// SD 1.5 em /opt/model_store, então a 1ª imagem não baixa nada.
+			"DATA_DIRECTORY": "/workspace/",
 		},
-		HealthPath:   "/",
-		// Pronto = checkpoint do SDXL Turbo visível para o ComfyUI.
-		ModelReadyCmd: `curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q sd_xl_turbo`,
-		ReadyTimeout: 20,
+		HealthPath: "/",
+		// Pronto = ComfyUI enxerga o checkpoint embutido do SD 1.5.
+		ModelReadyCmd: `curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q v1-5-pruned-emaonly`,
+		ReadyTimeout:  20,
 		ModelVRAM: map[string]float64{
-			"sdxl":         12,
-			"flux1-dev":    24,
-			"ltx-video-2b": 12,
+			"sd-1.5":        4,
+			"sdxl":          12,
+			"flux1-dev":     24,
+			"ltx-video-2b":  12,
 			"ltx-video-13b": 24,
-			"wan2.1-1.3b":  8,
+			"wan2.1-1.3b":   8,
 		},
 		DiskGB: 50, // flux1-dev/ltx-video-13b: large diffusion models
 	},
 	"faster-whisper": {
-		Name:         "faster-whisper",
-		Modality:     []string{"asr", "audio"},
-		RemotePort:   8000,
-		DefaultVRAM:  6,
-		DockerImage:  "fedirz/faster-whisper-server:latest-cuda",
+		Name:        "faster-whisper",
+		Modality:    []string{"asr", "audio"},
+		RemotePort:  8000,
+		DefaultVRAM: 6,
+		DockerImage: "fedirz/faster-whisper-server:latest-cuda",
 		// O app é uv-based e usa factory (create_app): "uvicorn ...:app" puro
 		// falha ("Attribute app not found"). O modelo HF segue o padrão
 		// Systran/faster-<model> (whisper-small -> Systran/faster-whisper-small).
@@ -225,10 +225,10 @@ var registry = map[string]Definition{
 		},
 	},
 	"xtts": {
-		Name:         "xtts",
-		Modality:     []string{"tts", "audio"},
-		RemotePort:   8000,
-		DefaultVRAM:  6,
+		Name:        "xtts",
+		Modality:    []string{"tts", "audio"},
+		RemotePort:  8000,
+		DefaultVRAM: 6,
 		// A tag `latest-cuda` não existe (manifest unknown); as válidas são
 		// latest-cuda118 / latest-cuda121. O código do servidor fica em /app.
 		DockerImage:  "ghcr.io/coqui-ai/xtts-streaming-server:latest-cuda121",

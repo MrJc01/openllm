@@ -78,8 +78,7 @@
       "estimated_metric": 1.5,
       "aliases": [
         "stable-diffusion-xl",
-        "sdxl-turbo",
-        "sd-1.5"
+        "sdxl-turbo"
       ],
       "tags": [
         "image"
@@ -217,6 +216,22 @@
       "tags": [
         "llm",
         "openai-compat"
+      ]
+    },
+    "sd-1.5": {
+      "engine": "comfyui",
+      "modality": "image",
+      "vram_gb": 4,
+      "metric": "itps",
+      "metric_target": 0.5,
+      "estimated_metric": 2,
+      "aliases": [
+        "stable-diffusion-1.5",
+        "sd15"
+      ],
+      "tags": [
+        "image",
+        "embutido"
       ]
     }
   }
