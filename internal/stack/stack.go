@@ -4,11 +4,47 @@
 package stack
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+//go:embed templates/text-image.yaml
+var templateTextImageYAML []byte
+
+//go:embed templates/text-image-video.yaml
+var templateTextImageVideoYAML []byte
+
+//go:embed templates/text-image-audio.yaml
+var templateTextImageAudioYAML []byte
+
+//go:embed templates/full-multimodal.yaml
+var templateFullMultimodalYAML []byte
+
+// EmbeddedTemplates retorna os templates de stack embutidos.
+var EmbeddedTemplates = map[string][]byte{
+	"text-image":         templateTextImageYAML,
+	"text-image-video":   templateTextImageVideoYAML,
+	"text-image-audio":   templateTextImageAudioYAML,
+	"full-multimodal":    templateFullMultimodalYAML,
+}
+
+// ListEmbeddedTemplates retorna os nomes dos templates disponíveis.
+func ListEmbeddedTemplates() []string {
+	names := make([]string, 0, len(EmbeddedTemplates))
+	for name := range EmbeddedTemplates {
+		names = append(names, name)
+	}
+	return names
+}
+
+// GetEmbeddedTemplate retorna o YAML de um template embutido.
+func GetEmbeddedTemplate(name string) ([]byte, bool) {
+	data, ok := EmbeddedTemplates[name]
+	return data, ok
+}
 
 // Service é um serviço do stack: um grupo de instâncias do mesmo modelo.
 type Service struct {

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/crom-org/openllm/internal/config"
+	"github.com/crom-org/openllm/internal/stack"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -140,6 +141,108 @@ var stackDownCmd = &cobra.Command{
 	},
 }
 
+var stackListTemplatesCmd = &cobra.Command{
+	Use:   "list-templates",
+	Short: "List embedded stack templates",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("Embedded stack templates:")
+		for _, name := range stack.ListEmbeddedTemplates() {
+			data, _ := stack.GetEmbeddedTemplate(name)
+			lines := strings.Split(string(data), "\n")
+			desc := ""
+			for _, l := range lines {
+				if strings.HasPrefix(strings.TrimSpace(l), "#") {
+					desc = strings.TrimSpace(strings.TrimPrefix(l, "#"))
+					break
+				}
+			}
+			fmt.Printf("  %s%s\n", color.CyanString(name), desc)
+		}
+	},
+}
+
+var stackUpTemplateCmd = &cobra.Command{
+	Use:   "up-template",
+	Short: "Deploy a stack from an embedded template",
+	Run: func(cmd *cobra.Command, args []string) {
+		if stackTemplateName == "" {
+			color.Red("Please specify --template (run 'openllm stack list-templates' to see options)")
+			os.Exit(1)
+		}
+		data, ok := stack.GetEmbeddedTemplate(stackTemplateName)
+		if !ok {
+			color.Red("Template %q not found. Run 'openllm stack list-templates'.", stackTemplateName)
+			os.Exit(1)
+		}
+
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			color.Red("Error: no configuration found. Run 'openllm init' first.")
+			os.Exit(1)
+		}
+
+		payload := map[string]string{
+			"name": stackTemplateName,
+			"yaml": string(data),
+		}
+		jsonBytes, _ := json.Marshal(payload)
+
+		color.Cyan("Deploying stack %q from embedded template...", stackTemplateName)
+		resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/stack", cfg.LocalDaemonPort),
+			"application/json", bytes.NewBuffer(jsonBytes))
+		if err != nil {
+			color.Red("Connection failed: could not connect to daemon. Is 'openllmd' running?")
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		body, _ := ioutil.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			color.Red("Daemon returned error: %s", string(body))
+			os.Exit(1)
+		}
+
+		var result struct {
+			Stack struct {
+				Name     string `json:"name"`
+				Services []struct {
+					Name      string   `json:"name"`
+					GroupID   string   `json:"group_id"`
+					Engine    string   `json:"engine"`
+					Model     string   `json:"model"`
+					Instances int      `json:"instances"`
+					Routes    []string `json:"routes"`
+					Created   []string `json:"created"`
+				} `json:"services"`
+			} `json:"stack"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			color.Red("Error parsing stack response: %v", err)
+			os.Exit(1)
+		}
+
+		color.Green("\n✓ Stack %q deploy started!", result.Stack.Name)
+		var allCreated []string
+		for _, svc := range result.Stack.Services {
+			fmt.Printf("\n  %-12s engine=%-14s model=%s  (%d instance(s))\n", svc.Name, svc.Engine, svc.Model, svc.Instances)
+			if len(svc.Routes) > 0 {
+				color.Cyan("  %-12s routes: %s", "", strings.Join(svc.Routes, "  "))
+			}
+			allCreated = append(allCreated, svc.Created...)
+		}
+
+		if len(allCreated) > 0 {
+			color.Cyan("\nWaiting for all services to become ready...")
+			waitForGroup(cfg.LocalDaemonPort, allCreated)
+		}
+
+		color.Cyan("\nUnified endpoint: http://localhost:%d (routed by path)", cfg.LocalProxyPort)
+		color.Yellow("Keep the daemon running to maintain tunnels and the watchdog.")
+	},
+}
+
+var stackTemplateName string
+
 var stackStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "List deployed stacks and their services",
@@ -195,4 +298,7 @@ func init() {
 	stackCmd.AddCommand(stackUpCmd)
 	stackCmd.AddCommand(stackDownCmd)
 	stackCmd.AddCommand(stackStatusCmd)
+	stackCmd.AddCommand(stackListTemplatesCmd)
+	stackUpTemplateCmd.Flags().StringVar(&stackTemplateName, "template", "", "Embedded template name (e.g. text-image, full-multimodal)")
+	stackCmd.AddCommand(stackUpTemplateCmd)
 }

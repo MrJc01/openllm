@@ -1,0 +1,26 @@
+# Stack Texto + Imagem + Vídeo
+# Três engines: Ollama (texto) + ComfyUI (imagem + vídeo)
+# Uso: openllm stack up --template text-image-video
+
+name: text-image-video
+services:
+  - name: llm
+    engine: ollama
+    model: deepseek-r1:7b
+    instances: 1
+    routes:
+      - "/v1/chat/completions"
+      - "/api/chat"
+      - "/api/generate"
+  - name: image
+    engine: comfyui
+    model: sdxl
+    instances: 1
+    routes:
+      - "/v1/images/generations"
+  - name: video
+    engine: comfyui
+    model: ltx-video-2b
+    instances: 1
+    routes:
+      - "/v1/videos/generations"

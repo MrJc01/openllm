@@ -1,0 +1,27 @@
+# Stack Texto + Imagem + Áudio
+# Três engines: Ollama (texto) + ComfyUI (imagem) + faster-whisper (áudio)
+# Uso: openllm stack up --template text-image-audio
+
+name: text-image-audio
+services:
+  - name: llm
+    engine: ollama
+    model: deepseek-r1:7b
+    instances: 1
+    routes:
+      - "/v1/chat/completions"
+      - "/api/chat"
+      - "/api/generate"
+  - name: image
+    engine: comfyui
+    model: sdxl
+    instances: 1
+    routes:
+      - "/v1/images/generations"
+  - name: speech
+    engine: faster-whisper
+    model: whisper-large-v3
+    instances: 1
+    routes:
+      - "/v1/audio/transcriptions"
+      - "/v1/audio/speech"

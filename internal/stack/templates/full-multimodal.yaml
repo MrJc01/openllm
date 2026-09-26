@@ -1,0 +1,34 @@
+# Stack Multimodal Completo
+# Quatro engines: Ollama (texto) + ComfyUI (imagem + vídeo) + faster-whisper (áudio)
+# Uso: openllm stack up --template full-multimodal
+
+name: full-multimodal
+services:
+  - name: llm
+    engine: ollama
+    model: deepseek-r1:7b
+    instances: 1
+    routes:
+      - "/v1/chat/completions"
+      - "/api/chat"
+      - "/api/generate"
+      - "/api/embeddings"
+  - name: image
+    engine: comfyui
+    model: sdxl
+    instances: 1
+    routes:
+      - "/v1/images/generations"
+  - name: video
+    engine: comfyui
+    model: ltx-video-2b
+    instances: 1
+    routes:
+      - "/v1/videos/generations"
+  - name: speech
+    engine: faster-whisper
+    model: whisper-large-v3
+    instances: 1
+    routes:
+      - "/v1/audio/transcriptions"
+      - "/v1/audio/speech"

@@ -1,0 +1,21 @@
+# Stack Texto + Imagem
+# Duas engines: Ollama (texto) + ComfyUI (imagem)
+# Uso: openllm stack up --template text-image
+
+name: text-image
+services:
+  - name: llm
+    engine: ollama
+    model: deepseek-r1:7b
+    instances: 1
+    routes:
+      - "/v1/chat/completions"
+      - "/api/chat"
+      - "/api/generate"
+      - "/api/embeddings"
+  - name: image
+    engine: comfyui
+    model: sdxl
+    instances: 1
+    routes:
+      - "/v1/images/generations"
