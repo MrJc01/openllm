@@ -15,12 +15,35 @@ type CatalogEntry struct {
 	VRAMGB         float64  `json:"vram_gb"`
 	Pull           string   `json:"pull,omitempty"`
 	Aliases        []string `json:"aliases,omitempty"`
+	// Files: arquivos que a engine precisa (ComfyUI: pasta em models/ + URL).
+	// O daemon gera o download e a checagem de "pronto" a partir desta lista.
+	Files []ModelFile `json:"files,omitempty"`
+	// Workflow: arquivo em uitest/lib/workflows usado para gerar (ComfyUI).
+	Workflow string `json:"workflow,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
 	// Throughput / quality metrics (usados por search/scale para filtrar ofertas)
 	// Text: "tps" (tokens/s) | Image: "itps" (iterações/s) | Video: "fps" | Audio: "rtf" (real-time factor, menor=pior)
 	Metric        string  `json:"metric,omitempty"`
 	MetricTarget  float64 `json:"metric_target,omitempty"`  // mínimo aceitável (para rtf, máximo aceitável)
 	EstimatedMetric float64 `json:"estimated_metric,omitempty"` // valor estimado em RTX 4090 de referência
+}
+
+// ModelFile é um arquivo de modelo: Dir é a pasta em models/ do ComfyUI
+// (checkpoints, diffusion_models, text_encoders, vae, clip_vision...).
+type ModelFile struct {
+	Dir string `json:"dir"`
+	URL string `json:"url"`
+	// As: nome do arquivo no disco quando difere do da URL
+	// (ex: google-t5/t5-base/model.safetensors → t5-base.safetensors).
+	As string `json:"as,omitempty"`
+}
+
+// Name é o nome do arquivo no disco (As, ou o último trecho da URL).
+func (f ModelFile) Name() string {
+	if f.As != "" {
+		return f.As
+	}
+	return f.URL[strings.LastIndex(f.URL, "/")+1:]
 }
 
 type catalogFile struct {

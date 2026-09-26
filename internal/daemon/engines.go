@@ -40,13 +40,12 @@ func (m *InstanceManager) setupEngine(sshClient *ssh.SSHClient, inst storage.Ins
 // O pull roda fire-and-forget no host remoto (nohup + log em arquivo):
 // canais SSH interativos morrem em downloads longos e não há como reanexá-los.
 func (m *InstanceManager) startEngine(sshClient *ssh.SSHClient, inst storage.Instance, def engines.Definition) error {
-	pullCmd := def.ModelPullCmd
-	if strings.TrimSpace(pullCmd) == "" {
+	full, _ := modelCmds(def, inst.Model)
+	if strings.TrimSpace(full) == "" {
 		return nil
 	}
 
 	go func() {
-		full := engines.Render(pullCmd, inst.Model)
 		background := backgroundCmd(full)
 		if _, err := sshClient.RunCommand(background); err != nil {
 			log.Printf("[%s] Failed to launch background model pull: %v", inst.ID, err)
@@ -66,11 +65,10 @@ func (m *InstanceManager) startEngine(sshClient *ssh.SSHClient, inst storage.Ins
 // waitForModelReady espera o MODELO INFORMADO ficar disponível (não inst.Model —
 // durante um swap o modelo alvo é diferente do atual da instância).
 func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst storage.Instance, def engines.Definition, targetModel string) error {
-	readyCmd := strings.TrimSpace(def.ModelReadyCmd)
-	if readyCmd == "" {
+	_, full := modelCmds(def, targetModel)
+	if strings.TrimSpace(full) == "" {
 		return nil
 	}
-	full := engines.Render(readyCmd, targetModel)
 	m.setModelState(inst.ID, targetModel, "loading")
 
 	deadline := time.Now().Add(20 * time.Minute)

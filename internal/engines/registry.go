@@ -202,42 +202,15 @@ var registry = map[string]Definition{
 			"PORTAL_CONFIG": "localhost:8188:18188:/:ComfyUI",
 		},
 		HealthPath: "/",
-		// sd-1.5 vem embutido; wan2.1-1.3b baixa os 3 arquivos repackaged da
-		// comfy-org (~10GB) direto nas pastas de modelos do ComfyUI (.part → mv,
-		// para o ready não ver arquivo pela metade). HF_TOKEN acelera.
-		ModelPullCmd: `case "{{.Model}}" in wan2.1-1.3b|wan-t2v) ` +
-			`. /etc/environment 2>/dev/null; ` +
-			comfyModelsDir +
-			`R=https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files; ` +
-			`get() { [ -f "$M/$1" ] && return; mkdir -p "$(dirname "$M/$1")"; ` +
-			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$M/$1.part" "$R/$1" && mv "$M/$1.part" "$M/$1"; }; ` +
-			`get vae/wan_2.1_vae.safetensors & ` +
-			`get text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors & ` +
-			`get diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors & wait;; ` +
-			`ltx-video-2b|ltxv-2b) ` +
-			`. /etc/environment 2>/dev/null; ` +
-			comfyModelsDir +
-			`get() { [ -f "$M/$1" ] && return; mkdir -p "$(dirname "$M/$1")"; ` +
-			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$M/$1.part" "$2" && mv "$M/$1.part" "$M/$1"; }; ` +
-			`get checkpoints/ltx-video-2b-v0.9.5.safetensors https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors & ` +
-			`get text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors & wait;; ` +
-			`sdxl|sdxl-turbo|stable-diffusion-xl) ` +
-			`. /etc/environment 2>/dev/null; ` +
-			comfyModelsDir +
-			`F="$M/checkpoints/sd_xl_turbo_1.0_fp16.safetensors"; [ -f "$F" ] || { mkdir -p "$M/checkpoints"; ` +
-			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$F.part" https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors && mv "$F.part" "$F"; };; esac`,
-		// Pronto = ComfyUI enxerga os arquivos do modelo pedido.
+		// Modelos com "files" no catálogo têm download e "pronto" gerados pelo
+		// daemon (daemon/modelfiles.go). Aqui fica só o SD 1.5, que já vem na
+		// imagem. "true" mantém swap/+modelo habilitados para o ComfyUI.
+		ModelPullCmd: "true",
 		ModelReadyCmd: `case "{{.Model}}" in ` +
-			`wan2.1-1.3b|wan-t2v) B=http://127.0.0.1:18188/models; ` +
-			`curl -sf $B/diffusion_models | grep -q wan2.1_t2v_1.3B && ` +
-			`curl -sf $B/text_encoders | grep -q umt5_xxl && curl -sf $B/vae | grep -q wan_2.1_vae;; ` +
-			`ltx-video-2b|ltxv-2b) B=http://127.0.0.1:18188/models; ` +
-			`curl -sf $B/checkpoints | grep -q ltx-video-2b && curl -sf $B/text_encoders | grep -q t5xxl_fp8;; ` +
-			`sdxl|sdxl-turbo|stable-diffusion-xl) curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q sd_xl_turbo;; ` +
 			`sd-1.5|sd15|stable-diffusion-1.5) curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q v1-5-pruned-emaonly;; ` +
-			// Modelo sem regra: nunca "pronto" (antes caía no SD 1.5 e mentia).
+			// Modelo sem regra nem files: nunca "pronto".
 			`*) exit 1;; esac`,
-		ReadyTimeout:  20,
+		ReadyTimeout: 20,
 		ModelVRAM: map[string]float64{
 			"sd-1.5":        4,
 			"sdxl":          12,
@@ -370,10 +343,10 @@ func GetCustom(name string, capabilities []string, customImage string, customCmd
 }
 
 // Render substitui o placeholder {{.Model}} (e a variante {{model}}) por um
-// comfyModelsDir: pasta models/ do ComfyUI QUE ESTÁ RODANDO (cwd do processo).
+// ComfyModelsDir: pasta models/ do ComfyUI QUE ESTÁ RODANDO (cwd do processo).
 // A vastai/comfy tem duas instalações (/opt/workspace-internal e a cópia em
 // /workspace); baixar na errada deixa o modelo invisível para o ComfyUI.
-const comfyModelsDir = `for i in $(seq 1 200); do P=$(pgrep -f 'main[.]py.*--port 18188' | head -1); [ -n "$P" ] && break; sleep 3; done; ` +
+const ComfyModelsDir = `for i in $(seq 1 200); do P=$(pgrep -f 'main[.]py.*--port 18188' | head -1); [ -n "$P" ] && break; sleep 3; done; ` +
 	`M=$(readlink /proc/$P/cwd)/models; `
 
 // nome de modelo em comandos (OnStartCmd, InstallCmd, ModelPullCmd).
