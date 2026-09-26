@@ -149,6 +149,26 @@ func (m *InstanceManager) AddLog(instanceID string, msg string) {
 		m.logs[instanceID] = m.logs[instanceID][len(m.logs[instanceID])-100:]
 	}
 	log.Printf("[%s] %s", instanceID, msg)
+	appendInstanceLog(instanceID, time.Now().Format(time.RFC3339)+" "+msg)
+}
+
+// appendInstanceLog guarda o histórico completo de cada instância em
+// .openllm/logs/instances/<id>.log (a memória só mantém as últimas 100).
+func appendInstanceLog(instanceID, line string) {
+	dir, err := config.GetStateDir()
+	if err != nil {
+		return
+	}
+	dir = filepath.Join(dir, "logs", "instances")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(dir, instanceID+".log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(line + "\n")
 }
 
 func (m *InstanceManager) GetLogs(instanceID string) []string {

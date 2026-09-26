@@ -110,7 +110,7 @@ var registry = map[string]Definition{
 		RemotePort:   8080,
 		DefaultVRAM:  16,
 		DockerImage:  "localai/localai:latest-gpu-nvidia-cuda-12",
-		OnStartCmd:   "mkdir -p /root/backends /root/models; /local-ai backends install stablediffusion 2>&1 || true; LOCALAI_ADDRESS=0.0.0.0:8080 /local-ai --models-path /root/models &",
+		OnStartCmd:   "mkdir -p /root/backends /root/models; /local-ai backends install stablediffusion-ggml 2>&1 || true; LOCALAI_ADDRESS=0.0.0.0:8080 /local-ai --models-path /root/models &",
 		HealthPath:   "/health",
 		ReadyTimeout: 20,
 		// /health responde sem nenhum modelo: sem estes dois comandos o LocalAI
@@ -132,7 +132,7 @@ var registry = map[string]Definition{
 		RemotePort:   8080,
 		DefaultVRAM:  8,
 		DockerImage:  "localai/localai:latest-gpu-nvidia-cuda-12",
-		OnStartCmd:   "mkdir -p /root/backends /root/models; /local-ai backends install stablediffusion 2>&1 || true; LOCALAI_ADDRESS=0.0.0.0:8080 /local-ai --models-path /root/models &",
+		OnStartCmd:   "mkdir -p /root/backends /root/models; /local-ai backends install stablediffusion-ggml 2>&1 || true; LOCALAI_ADDRESS=0.0.0.0:8080 /local-ai --models-path /root/models &",
 		HealthPath:   "/health",
 		ReadyTimeout: 20,
 		ModelVRAM: map[string]float64{

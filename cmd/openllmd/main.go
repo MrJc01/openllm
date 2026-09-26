@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/crom-org/openllm/internal/config"
 	"github.com/crom-org/openllm/internal/daemon"
@@ -17,6 +20,17 @@ import (
 )
 
 func main() {
+	// Registro permanente: tudo que o daemon loga vai também para
+	// .openllm/logs/openllmd-AAAAMMDD.log (terminal continua recebendo).
+	if dir, err := config.GetStateDir(); err == nil {
+		logDir := filepath.Join(dir, "logs")
+		if err := os.MkdirAll(logDir, 0755); err == nil {
+			name := filepath.Join(logDir, "openllmd-"+time.Now().Format("20060102")+".log")
+			if f, err := os.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+				log.SetOutput(io.MultiWriter(os.Stderr, f))
+			}
+		}
+	}
 	log.Println("Starting openllmd daemon...")
 
 	// Engines externas: manifests JSON em ./engines/ e .openllm/engines/
