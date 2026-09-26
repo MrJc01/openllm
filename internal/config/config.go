@@ -41,9 +41,16 @@ type Config struct {
 	LocalDaemonPort        int     `json:"local_daemon_port"`
 	HeartbeatPort          int     `json:"heartbeat_port"`
 
-	// LBStrategy define o balanceamento do proxy: "round-robin" (default)
+// LBStrategy define o balanceamento do proxy: "round-robin" (default)
 	// ou "least-connections".
 	LBStrategy string `json:"lb_strategy,omitempty"`
+
+	// Autoscaler config (opcional)
+	AutoscalerEnabled  bool    `json:"autoscaler_enabled,omitempty"`
+	AutoscalerMin      int     `json:"autoscaler_min,omitempty"`      // default 1
+	AutoscalerMax      int     `json:"autoscaler_max,omitempty"`      // default 3
+	AutoscalerTarget   int     `json:"autoscaler_target,omitempty"`   // reqs em voo por instância, default 2
+	AutoscalerMaxCost  float64 `json:"autoscaler_max_cost,omitempty"` // teto $/h total, 0 = sem limite
 }
 
 const (
@@ -112,6 +119,11 @@ func DefaultConfig() *Config {
 		LocalProxyPort:         11434,
 		LocalDaemonPort:        17290,
 		HeartbeatPort:          17291,
+		AutoscalerEnabled:      false,
+		AutoscalerMin:          1,
+		AutoscalerMax:          3,
+		AutoscalerTarget:       2,
+		AutoscalerMaxCost:      0,
 	}
 }
 

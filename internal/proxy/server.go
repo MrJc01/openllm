@@ -76,7 +76,7 @@ type ProxyServer struct {
 	rrCounters map[string]*uint64
 	rrMu       sync.Mutex
 	inFlight   map[string]*int64 // conexões em voo por InstanceID
-	inFlightMu sync.Mutex
+	inFlightMu sync.RWMutex
 
 	healthy   map[string]bool // InstanceID → saudável (default true)
 	healthMu  sync.RWMutex
@@ -244,6 +244,14 @@ func (p *ProxyServer) getInFlight(id string) *int64 {
 	var val int64
 	p.inFlight[id] = &val
 	return &val
+}
+
+// InFlightFor retorna o contador de requisições em voo para um InstanceID.
+// Retorna nil se o target não existe (útil para autoscaler).
+func (p *ProxyServer) InFlightFor(instanceID string) *int64 {
+	p.inFlightMu.RLock()
+	defer p.inFlightMu.RUnlock()
+	return p.inFlight[instanceID]
 }
 
 // isHealthy reporta se o target está saudável (targets sem health-check são

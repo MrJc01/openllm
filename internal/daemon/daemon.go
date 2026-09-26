@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/crom-org/openllm/internal/config"
@@ -21,6 +22,7 @@ type Daemon struct {
 	proxyServer *proxy.ProxyServer
 	controlAPI  *ControlServer
 	heartbeat   *HeartbeatServer
+	autoscaler  *Autoscaler
 }
 
 func NewDaemon(cfg *config.Config) (*Daemon, error) {
@@ -33,6 +35,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 	mgr := NewInstanceManager(db, ps)
 	ctrl := NewControlServer(cfg.LocalDaemonPort, mgr, db)
 	hb := NewHeartbeatServer(cfg.HeartbeatPort, mgr)
+	as := NewAutoscaler(cfg, db, mgr, ps)
 
 	return &Daemon{
 		cfg:         cfg,
@@ -41,6 +44,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		proxyServer: ps,
 		controlAPI:  ctrl,
 		heartbeat:   hb,
+		autoscaler:  as,
 	}, nil
 }
 
@@ -63,6 +67,14 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 		// 2. Inicia loop de monitoramento de saúde das instâncias (Compute)
 		go d.monitorHealthLoop(ctx)
+
+		// 3. Inicia autoscaler (Compute) — usa policies default se configurado
+		d.autoscaler.Start(ctx)
+
+		// 4. Aplica policies default do config para grupos existentes
+		if d.cfg.AutoscalerEnabled {
+			d.applyDefaultAutoscalerPolicies()
+		}
 	}
 
 	// 3. Executa os servidores HTTP em paralelo
@@ -114,6 +126,46 @@ func (d *Daemon) setupInferenceTarget() {
 		BaseURL:     p.BaseURL(),
 		AuthHeaders: p.AuthHeaders(d.cfg.ActiveAPIKey()),
 	})
+}
+
+// applyDefaultAutoscalerPolicies cria policies default do config para
+// todos os grupos que existem no banco.
+func (d *Daemon) applyDefaultAutoscalerPolicies() {
+	groups, err := d.db.ListGroups()
+	if err != nil {
+		log.Printf("[autoscaler] failed to list groups: %v", err)
+		return
+	}
+	for _, g := range groups {
+		if g.ID == "" {
+			continue
+		}
+		parts := strings.SplitN(g.ID, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		min := d.cfg.AutoscalerMin
+		if min < 1 {
+			min = 1
+		}
+		max := d.cfg.AutoscalerMax
+		if max < min {
+			max = min
+		}
+		target := d.cfg.AutoscalerTarget
+		if target <= 0 {
+			target = 2
+		}
+		d.autoscaler.SetPolicy(g.ID, AutoscalerConfig{
+			GroupID:        g.ID,
+			MinInstances:   min,
+			MaxInstances:   max,
+			TargetInFlight: target,
+			MaxCostPerHour: d.cfg.AutoscalerMaxCost,
+			CooldownSec:    60,
+			Enabled:        true,
+		})
+	}
 }
 
 // recoverActiveInstances lê instâncias com status "running" ou "deploying" do DB no boot do daemon
@@ -220,4 +272,183 @@ func (d *Daemon) monitorHealthLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// ============================================================
+// Autoscaler opcional (Fase 2b)
+// ============================================================
+
+// AutoscalerConfig define a política de auto-scaling para um grupo.
+type AutoscalerConfig struct {
+	GroupID        string  // engine/model
+	MinInstances   int     // mínimo (>=1)
+	MaxInstances   int     // máximo
+	TargetInFlight int     // target de requisições em voo por instância
+	MaxCostPerHour float64 // teto de custo/hora total do grupo
+	CooldownSec    int     // segundos entre decisões de scale (default 60)
+	Enabled        bool    // habilitado ou não
+}
+
+// Autoscaler monitora concorrência no proxy e ajusta escala do grupo.
+type Autoscaler struct {
+	cfg        *config.Config
+	db         *storage.DB
+	manager    *InstanceManager
+	proxy      *proxy.ProxyServer
+	policy     map[string]AutoscalerConfig // GroupID -> config
+	mu         sync.RWMutex
+	stopCh     chan struct{}
+	wg         sync.WaitGroup
+}
+
+// NewAutoscaler cria o autoscaler (não inicia o loop).
+func NewAutoscaler(cfg *config.Config, db *storage.DB, mgr *InstanceManager, ps *proxy.ProxyServer) *Autoscaler {
+	return &Autoscaler{
+		cfg:     cfg,
+		db:      db,
+		manager: mgr,
+		proxy:   ps,
+		policy:  make(map[string]AutoscalerConfig),
+		stopCh:  make(chan struct{}),
+	}
+}
+
+// SetPolicy define/atualiza a política para um grupo.
+func (a *Autoscaler) SetPolicy(groupID string, p AutoscalerConfig) {
+	if p.MinInstances < 1 {
+		p.MinInstances = 1
+	}
+	if p.MaxInstances < p.MinInstances {
+		p.MaxInstances = p.MinInstances
+	}
+	if p.TargetInFlight <= 0 {
+		p.TargetInFlight = 2 // default: 2 reqs em voo por instância
+	}
+	if p.CooldownSec <= 0 {
+		p.CooldownSec = 60
+	}
+	a.mu.Lock()
+	a.policy[groupID] = p
+	a.mu.Unlock()
+	log.Printf("[autoscaler] policy set for %s: min=%d max=%d targetInFlight=%d maxCost=%.2f/h enabled=%v",
+		groupID, p.MinInstances, p.MaxInstances, p.TargetInFlight, p.MaxCostPerHour, p.Enabled)
+}
+
+// Start inicia o loop de auto-scaling em background.
+func (a *Autoscaler) Start(ctx context.Context) {
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		log.Println("[autoscaler] loop started")
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		lastDecision := map[string]time.Time{}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-a.stopCh:
+				return
+			case <-ticker.C:
+				a.mu.RLock()
+				policies := make(map[string]AutoscalerConfig, len(a.policy))
+				for k, v := range a.policy {
+					policies[k] = v
+				}
+				a.mu.RUnlock()
+
+				for groupID, p := range policies {
+					if !p.Enabled {
+						continue
+					}
+					// Cooldown
+					if last, ok := lastDecision[groupID]; ok && time.Since(last) < time.Duration(p.CooldownSec)*time.Second {
+						continue
+					}
+					if err := a.evaluate(ctx, groupID, p); err != nil {
+						log.Printf("[autoscaler] %s: %v", groupID, err)
+					}
+					lastDecision[groupID] = time.Now()
+				}
+			}
+		}
+	}()
+}
+
+// Stop para o loop.
+func (a *Autoscaler) Stop() {
+	close(a.stopCh)
+	a.wg.Wait()
+	log.Println("[autoscaler] loop stopped")
+}
+
+// evaluate avalia uma política e decide scale up/down.
+func (a *Autoscaler) evaluate(ctx context.Context, groupID string, p AutoscalerConfig) error {
+	// 1. Conta instâncias ativas do grupo
+	active, err := a.manager.activeGroupInstances(groupID)
+	if err != nil {
+		return err
+	}
+	current := len(active)
+
+	// 2. Soma in-flight do proxy para este grupo
+	inFlight := a.proxyInFlightForGroup(groupID)
+
+	// 3. Calcula custo atual/hora
+	var currentCost float64
+	for _, inst := range active {
+		currentCost += inst.CostPerHour
+	}
+
+	// 4. Decide target baseado em in-flight
+	// target = ceil(inFlight / TargetInFlight)
+	// clamp entre min/max
+	desired := (inFlight + p.TargetInFlight - 1) / p.TargetInFlight
+	if desired < p.MinInstances {
+		desired = p.MinInstances
+	}
+	if desired > p.MaxInstances {
+		desired = p.MaxInstances
+	}
+
+	// 5. Budget check: se desired * avgCost > maxCost, reduz
+	if p.MaxCostPerHour > 0 && current > 0 {
+		avgCost := currentCost / float64(current)
+		if float64(desired)*avgCost > p.MaxCostPerHour {
+			desired = int(p.MaxCostPerHour / avgCost)
+			if desired < p.MinInstances {
+				desired = p.MinInstances
+			}
+		}
+	}
+
+	if desired == current {
+		return nil // já no target
+	}
+
+	log.Printf("[autoscaler] %s: inFlight=%d current=%d desired=%d (cost=%.2f/h targetInFlight=%d)",
+		groupID, inFlight, current, desired, currentCost, p.TargetInFlight)
+
+	// 6. Executa scale
+	// Note: ScaleGroup precisa engine/model. Parse groupID.
+	parts := strings.SplitN(groupID, "/", 2)
+	if len(parts) == 2 {
+		_, err = a.manager.ScaleGroup(a.cfg, parts[0], parts[1], desired, 0)
+	}
+	return err
+}
+
+// proxyInFlightForGroup soma conexões em voo das instâncias do grupo.
+func (a *Autoscaler) proxyInFlightForGroup(groupID string) int {
+	var total int64
+	a.proxy.TargetsSnapshot(func(targets []proxy.Target) {
+		for _, t := range targets {
+			if t.GroupID == groupID {
+				if ptr := a.proxy.InFlightFor(t.InstanceID); ptr != nil {
+					total += atomic.LoadInt64(ptr)
+				}
+			}
+		}
+	})
+	return int(total)
 }
