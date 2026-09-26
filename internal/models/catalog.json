@@ -72,12 +72,14 @@
     "sdxl": {
       "engine": "comfyui",
       "modality": "image",
-      "vram_gb": 12,
+      "vram_gb": 8,
       "metric": "itps",
       "metric_target": 0.5,
       "estimated_metric": 1.5,
       "aliases": [
-        "stable-diffusion-xl"
+        "stable-diffusion-xl",
+        "sdxl-turbo",
+        "sd-1.5"
       ],
       "tags": [
         "image"
@@ -215,35 +217,6 @@
       "tags": [
         "llm",
         "openai-compat"
-      ]
-    },
-    "sd-1.5-ggml": {
-      "engine": "localai",
-      "modality": "image",
-      "vram_gb": 8,
-      "metric": "itps",
-      "metric_target": 3,
-      "estimated_metric": 8,
-      "aliases": [
-        "stable-diffusion-1.5",
-        "sd-1.5"
-      ],
-      "tags": [
-        "image"
-      ]
-    },
-    "z-image-turbo-diffusers": {
-      "engine": "localai",
-      "modality": "image",
-      "vram_gb": 16,
-      "metric": "itps",
-      "metric_target": 1,
-      "estimated_metric": 4,
-      "tags": [
-        "image"
-      ],
-      "aliases": [
-        "z-image-turbo"
       ]
     }
   }

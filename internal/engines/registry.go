@@ -188,9 +188,14 @@ var registry = map[string]Definition{
 			"COMFYUI_ARGS":                   "--disable-auto-launch --disable-xformers --port 18188 --enable-cors-header",
 			"COMFYUI_API_BASE":               "http://localhost:18188",
 			"PROVISIONING_COMFYUI_WORKFLOWS": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/templates/sdxlturbo_example.json",
+			// Checkpoint baixado direto do HF (o provisioning do workflow pode
+			// não baixar modelos); o ModelReadyCmd abaixo espera por ele.
+			"PROVISIONING_COMFYUI_CHECKPOINTS": "https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors",
 			"DATA_DIRECTORY":                 "/workspace/",
 		},
 		HealthPath:   "/",
+		// Pronto = checkpoint do SDXL Turbo visível para o ComfyUI.
+		ModelReadyCmd: `curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q sd_xl_turbo`,
 		ReadyTimeout: 20,
 		ModelVRAM: map[string]float64{
 			"sdxl":         12,
