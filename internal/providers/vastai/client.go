@@ -75,7 +75,7 @@ func (c *Client) Search(ctx context.Context, req providers.SearchRequest) ([]pro
 	if req.MinCUDA > 0 {
 		payload["cuda_max_good"] = map[string]interface{}{"gte": req.MinCUDA}
 		if req.MinCUDA >= 13 {
-			payload["compute_cap"] = map[string]interface{}{"gte": 750}
+			payload["compute_cap"] = map[string]interface{}{"gte": 800} // Ampere+: vllm cu13 falhou em Turing (RTX 2060)
 		}
 	}
 	if req.MinDiskGB > 0 {

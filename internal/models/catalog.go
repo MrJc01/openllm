@@ -123,3 +123,14 @@ func ListCatalog() map[string]CatalogEntry {
 	}
 	return out
 }
+// CatalogByEngine agrupa os modelos do catálogo por engine (para UIs).
+func CatalogByEngine() map[string]map[string]CatalogEntry {
+	out := map[string]map[string]CatalogEntry{}
+	for name, e := range catalog {
+		if out[e.Engine] == nil {
+			out[e.Engine] = map[string]CatalogEntry{}
+		}
+		out[e.Engine][name] = e
+	}
+	return out
+}

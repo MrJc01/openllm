@@ -41,6 +41,10 @@ func (s *ControlServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/scale", s.handleScale)
 	mux.HandleFunc("/swap", s.handleSwap)
 	mux.HandleFunc("/models/add", s.handleAddModel)
+	mux.HandleFunc("/catalog", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(models.CatalogByEngine())
+	})
 	mux.HandleFunc("/models/remove", s.handleRemoveModel)
 	mux.HandleFunc("/stack", s.handleStack)   // POST = up, DELETE/POST down = down
 	mux.HandleFunc("/stacks", s.handleStacks) // GET = lista stacks
