@@ -213,12 +213,21 @@ var registry = map[string]Definition{
 			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$M/$1.part" "$R/$1" && mv "$M/$1.part" "$M/$1"; }; ` +
 			`get vae/wan_2.1_vae.safetensors & ` +
 			`get text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors & ` +
-			`get diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors & wait;; esac`,
+			`get diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors & wait;; ` +
+			`ltx-video-2b|ltxv-2b) ` +
+			`. /etc/environment 2>/dev/null; ` +
+			`M=$(dirname "$(find / -maxdepth 5 -type f -path '*ComfyUI/main.py' 2>/dev/null | head -1)")/models; ` +
+			`get() { [ -f "$M/$1" ] && return; mkdir -p "$(dirname "$M/$1")"; ` +
+			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$M/$1.part" "$2" && mv "$M/$1.part" "$M/$1"; }; ` +
+			`get checkpoints/ltx-video-2b-v0.9.5.safetensors https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors & ` +
+			`get text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors & wait;; esac`,
 		// Pronto = ComfyUI enxerga os arquivos do modelo pedido.
 		ModelReadyCmd: `case "{{.Model}}" in ` +
 			`wan2.1-1.3b|wan-t2v) B=http://127.0.0.1:18188/models; ` +
 			`curl -sf $B/diffusion_models | grep -q wan2.1_t2v_1.3B && ` +
 			`curl -sf $B/text_encoders | grep -q umt5_xxl && curl -sf $B/vae | grep -q wan_2.1_vae;; ` +
+			`ltx-video-2b|ltxv-2b) B=http://127.0.0.1:18188/models; ` +
+			`curl -sf $B/checkpoints | grep -q ltx-video-2b && curl -sf $B/text_encoders | grep -q t5xxl_fp8;; ` +
 			`*) curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q v1-5-pruned-emaonly;; esac`,
 		ReadyTimeout:  20,
 		ModelVRAM: map[string]float64{
