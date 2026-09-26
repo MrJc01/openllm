@@ -75,6 +75,9 @@ type InstanceInfo struct {
 	CostPerHour float64 `json:"cost_per_hour"`
 	SSHHost     string  `json:"ssh_host"`
 	SSHPort     int     `json:"ssh_port"`
+	// DirectSSHHost/Port: SSH sem proxy (IP público do host), quando exposto.
+	DirectSSHHost string `json:"direct_ssh_host,omitempty"`
+	DirectSSHPort int    `json:"direct_ssh_port,omitempty"`
 	Status      string  `json:"status"` // "deploying", "running", "stopped", "failed"
 	StatusMsg   string  `json:"status_msg,omitempty"`
 	// Label identifica a instância no provedor. Instâncias do openllm usam

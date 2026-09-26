@@ -68,6 +68,8 @@ func (c *Client) Search(ctx context.Context, req providers.SearchRequest) ([]pro
 		// Hosts instáveis ou com rede lenta dominam o tempo de deploy.
 		"reliability2": map[string]interface{}{"gte": 0.98},
 		"inet_down":    map[string]interface{}{"gte": 200},
+		// Portas diretas abertas: permite SSH direto (fallback do proxy).
+		"direct_port_count": map[string]interface{}{"gte": 1},
 		"order":        [][]string{{"dph_total", "asc"}},
 		// Hosts na China costumam não alcançar Docker Hub/HuggingFace.
 		"geolocation": map[string]interface{}{"notin": []string{"CN"}},
@@ -212,7 +214,9 @@ func (c *Client) Deploy(ctx context.Context, req providers.DeployRequest) (*prov
 	payload := map[string]interface{}{
 		"image":   req.Image,
 		"disk":    diskGB,
-		"runtype": "ssh",
+		// Direto + proxy (igual `vastai create --ssh --direct`): quando o túnel
+		// do proxy sshN.vast.ai falha, o daemon entra pelo IP público.
+		"runtype": "ssh_direc ssh_proxy",
 		"label":   fmt.Sprintf("openllm-%s", strings.ReplaceAll(req.Model, ":", "-")),
 		"onstart": onstart,
 	}
@@ -349,6 +353,20 @@ type VastInstance struct {
 	DphTotal     float64 `json:"dph_total"`
 	MachineID    int     `json:"machine_id"`
 	Label        string  `json:"label"`
+	// SSH direto (sem o proxy sshN.vast.ai): IP público + porta do host
+	// mapeada para a 22 do container (só existe com runtype ssh_direc).
+	PublicIP string                         `json:"public_ipaddr"`
+	Ports    map[string][]map[string]string `json:"ports"`
+}
+
+// directSSH devolve IP:porta do SSH direto, se o host expôs a porta 22.
+func (v VastInstance) directSSH() (string, int) {
+	for _, p := range v.Ports["22/tcp"] {
+		if port, err := strconv.Atoi(p["HostPort"]); err == nil && port > 0 && v.PublicIP != "" {
+			return strings.TrimSpace(v.PublicIP), port
+		}
+	}
+	return "", 0
 }
 
 type InstancesListResponse struct {
@@ -414,6 +432,8 @@ func (c *Client) GetStatus(ctx context.Context, instanceID string, apiKey string
 				SSHHost:     inst.SshHost,
 				SSHPort:     inst.SshPort,
 				Status:      status,
+				DirectSSHHost: func() string { h, _ := inst.directSSH(); return h }(),
+				DirectSSHPort: func() int { _, p := inst.directSSH(); return p }(),
 				StatusMsg:   inst.StatusMsg,
 				Label:       inst.Label,
 			}, nil

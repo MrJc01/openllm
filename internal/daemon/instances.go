@@ -404,6 +404,17 @@ WaitLoop:
 		if err == nil {
 			break
 		}
+		// Proxy falhando: tenta o SSH direto pelo IP público do host.
+		if i >= 2 {
+			if fresh, ferr := client.GetStatus(context.Background(), inst.ID, cfg.ActiveAPIKey()); ferr == nil && fresh.DirectSSHPort > 0 {
+				if c, derr := ssh.Connect(fresh.DirectSSHHost, fresh.DirectSSHPort, privKeyPath); derr == nil {
+					m.AddLog(inst.ID, fmt.Sprintf("SSH proxy failing; connected directly to %s:%d", fresh.DirectSSHHost, fresh.DirectSSHPort))
+					sshClient, err = c, nil
+					sshInfo.SSHHost, sshInfo.SSHPort = fresh.DirectSSHHost, fresh.DirectSSHPort
+					break
+				}
+			}
+		}
 		if strings.Contains(err.Error(), "unable to authenticate") {
 			authFailures++
 			if authFailures >= maxAuthFailures {
