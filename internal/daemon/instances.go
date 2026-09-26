@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -436,21 +437,14 @@ WaitLoop:
 		log.Printf("[%s] Engine setup warning/error: %v. Proceeding...", inst.ID, err)
 	}
 
-	// Localizar o executável openllm-watchdog local
-	watchdogBytes, err := findWatchdogBinary()
+	// Watchdog: script shell (~1KB, 1 comando SSH) quando o host tem curl.
+	// Copiar o binário Go (8MB) pelo proxy SSH levava minutos em hosts
+	// distantes. O binário fica como fallback para imagens sem curl.
+	_, _ = sshClient.RunCommand("pkill -f openllm-watchdog || true")
+	watchdogLaunch, err := m.installWatchdog(sshClient, inst, cfg)
 	if err != nil {
-		log.Printf("[%s] Failed to locate local openllm-watchdog: %v", inst.ID, err)
-		m.failSetup(cfg, inst, fmt.Sprintf("missing watchdog binary: %v", err), destroyOnFail)
-		return
-	}
-
-	// Copia o watchdog (mata e remove anterior caso esteja rodando após restart do daemon)
-	log.Printf("[%s] Transferring openllm-watchdog to remote host...", inst.ID)
-	_, _ = sshClient.RunCommand("pkill -9 openllm-watchdog || true; rm -f /usr/local/bin/openllm-watchdog || true")
-	err = sshClient.CopyFile("/usr/local/bin/openllm-watchdog", watchdogBytes, "0755")
-	if err != nil {
-		log.Printf("[%s] Failed to copy watchdog: %v", inst.ID, err)
-		m.failSetup(cfg, inst, fmt.Sprintf("failed to transfer watchdog: %v", err), destroyOnFail)
+		log.Printf("[%s] Failed to install watchdog: %v", inst.ID, err)
+		m.failSetup(cfg, inst, fmt.Sprintf("failed to install watchdog: %v", err), destroyOnFail)
 		return
 	}
 
@@ -473,10 +467,7 @@ WaitLoop:
 
 	// F. Executa o Watchdog em background no host remoto
 	// Ele pingará local:17291 que mapeia via túnel reverso para o daemon
-	watchdogCmd := fmt.Sprintf("nohup /usr/local/bin/openllm-watchdog --instance-id %s --api-key %s --ping-url \"http://localhost:%d/ping?instance_id=%s\" --interval 30s --timeout %dm > /var/log/openllm-watchdog.log 2>&1 &",
-		inst.ID, cfg.ActiveAPIKey(), cfg.HeartbeatPort, inst.ID, cfg.WatchdogTimeoutMinutes)
-
-	_, err = sshClient.RunCommand(watchdogCmd)
+	_, err = sshClient.RunCommand(watchdogLaunch)
 	if err != nil {
 		log.Printf("[%s] Warning: failed to start watchdog on host: %v", inst.ID, err)
 	}
@@ -1173,4 +1164,51 @@ func removeString(list []string, v string) []string {
 		}
 	}
 	return out
+}
+
+// watchdogScript é o equivalente shell do cmd/openllm-watchdog: pinga o
+// daemon pelo túnel reverso e destrói a instância na Vast se ficar sem
+// resposta por mais que o timeout.
+const watchdogScript = `#!/bin/sh
+ID="%s"; KEY="%s"; URL="http://localhost:%d/ping?instance_id=%s"; TIMEOUT=%d
+last=$(date +%%s)
+while true; do
+  sleep 30
+  if curl -sf -m 10 -A openllm-watchdog/sh "$URL" >/dev/null; then
+    last=$(date +%%s); echo "$(date -u +%%FT%%TZ) ping ok"
+  else
+    idle=$(( $(date +%%s) - last )); echo "$(date -u +%%FT%%TZ) ping failed (${idle}s/${TIMEOUT}s)"
+    if [ "$idle" -ge "$TIMEOUT" ]; then
+      echo "$(date -u +%%FT%%TZ) timeout: self-destruct $ID"
+      curl -s -m 15 -X DELETE -H "Authorization: Bearer $KEY" "https://console.vast.ai/api/v0/instances/$ID/"
+      exit 0
+    fi
+  fi
+done
+`
+
+// installWatchdog instala o watchdog e devolve o comando que o inicia.
+func (m *InstanceManager) installWatchdog(sshClient *ssh.SSHClient, inst storage.Instance, cfg *config.Config) (string, error) {
+	const logRedirect = " > /var/log/openllm-watchdog.log 2>&1 &"
+	if _, err := sshClient.RunCommand("command -v curl >/dev/null"); err == nil {
+		script := fmt.Sprintf(watchdogScript, inst.ID, cfg.ActiveAPIKey(), cfg.HeartbeatPort, inst.ID, cfg.WatchdogTimeoutMinutes*60)
+		encoded := base64.StdEncoding.EncodeToString([]byte(script))
+		cmd := fmt.Sprintf("echo %s | base64 -d > /usr/local/bin/openllm-watchdog.sh && chmod 700 /usr/local/bin/openllm-watchdog.sh", encoded)
+		if _, err := sshClient.RunCommand(cmd); err == nil {
+			m.AddLog(inst.ID, "Watchdog installed (shell script)")
+			return "nohup sh /usr/local/bin/openllm-watchdog.sh" + logRedirect, nil
+		}
+	}
+
+	log.Printf("[%s] Host sem curl: transferindo binário openllm-watchdog...", inst.ID)
+	watchdogBytes, err := findWatchdogBinary()
+	if err != nil {
+		return "", err
+	}
+	_, _ = sshClient.RunCommand("rm -f /usr/local/bin/openllm-watchdog || true")
+	if err := sshClient.CopyFile("/usr/local/bin/openllm-watchdog", watchdogBytes, "0755"); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("nohup /usr/local/bin/openllm-watchdog --instance-id %s --api-key %s --ping-url \"http://localhost:%d/ping?instance_id=%s\" --interval 30s --timeout %dm",
+		inst.ID, cfg.ActiveAPIKey(), cfg.HeartbeatPort, inst.ID, cfg.WatchdogTimeoutMinutes) + logRedirect, nil
 }
