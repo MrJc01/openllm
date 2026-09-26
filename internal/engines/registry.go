@@ -73,6 +73,10 @@ type Definition struct {
 	// DiskGB é o tamanho de disco (GB) solicitado ao provedor para a instância.
 	// 0 = usa o default do daemon (35GB).
 	DiskGB float64 `json:"disk_gb,omitempty"`
+
+	// MinCUDA é a versão mínima de CUDA que o driver do host precisa suportar
+	// para a DockerImage (ex: 13.0 para tags -cuda-13.0). 0 = sem restrição.
+	MinCUDA float64 `json:"min_cuda,omitempty"`
 }
 
 var registry = map[string]Definition{
@@ -139,6 +143,7 @@ var registry = map[string]Definition{
 		// Template oficial Vast "vLLM": o entrypoint sobe `vllm serve` com
 		// VLLM_MODEL/VLLM_ARGS (porta interna 18000; a 8000 é o proxy com auth).
 		DockerImage: "vastai/vllm:v0.30.0-cuda-13.0",
+		MinCUDA:     13.0,
 		OnStartCmd:  "entrypoint.sh",
 		Env: map[string]string{
 			"VLLM_MODEL":     "{{.Model}}",
@@ -167,6 +172,7 @@ var registry = map[string]Definition{
 		// Template oficial Vast "ComfyUI": porta interna 18188 (8188 é o proxy
 		// com auth); o provisioning baixa o checkpoint do workflow SDXL Turbo.
 		DockerImage: "vastai/comfy:v0.37.0-cuda-13.2-py312",
+		MinCUDA:     13.2,
 		OnStartCmd:  "entrypoint.sh",
 		Env: map[string]string{
 			"COMFYUI_ARGS":                   "--disable-auto-launch --disable-xformers --port 18188 --enable-cors-header",

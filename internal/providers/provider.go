@@ -17,6 +17,11 @@ type SearchRequest struct {
 	Metric   string // "tps", "itps", "fps", "rtf" — usado p/ estimar se a GPU atende
 	GPUCount int
 	Model    string
+	// MinCUDA: versão mínima de CUDA do driver (cuda_max_good). Imagens CUDA 13
+	// também exigem GPU Turing+ (compute_cap >= 7.5).
+	MinCUDA float64
+	// MinDiskGB: disco livre mínimo no host para imagem + modelo.
+	MinDiskGB float64
 }
 
 // Machine representa uma oferta de GPU disponível para aluguel

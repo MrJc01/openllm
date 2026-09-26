@@ -377,3 +377,34 @@ MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn/yGWyVfPWXKbLcTCeJr4ltEAcSKwZEm9m
 MIbXsK0VXPBbdY8GiwR4GApvc9BGRaSgLxCHVSi4PQIDAQAB
 -----END RSA PRIVATE KEY-----
 `
+
+// Modelos extras (AddModel) viram targets do proxy apontando para a mesma
+// instância; RemoveModel tira só o extra.
+func TestExtraModelsBecomeProxyTargets(t *testing.T) {
+	m, _, ps := newTestManager(t)
+	m.actives["i1"] = &ActiveInstance{
+		Instance:    storage.Instance{ID: "i1", Status: "running", Engine: "ollama", Model: "llama3.2:3b"},
+		LocalPort:   40001,
+		ExtraModels: []string{"nomic-embed-text"},
+	}
+	m.updateProxyTargets()
+
+	byModel := map[string]int{}
+	ps.TargetsSnapshot(func(ts []proxy.Target) {
+		for _, tg := range ts {
+			byModel[tg.Model] = tg.LocalPort
+		}
+	})
+	if byModel["llama3.2:3b"] != 40001 || byModel["nomic-embed-text"] != 40001 {
+		t.Fatalf("both models should route to port 40001: %v", byModel)
+	}
+
+	if err := m.RemoveModel("i1", "nomic-embed-text"); err != nil {
+		t.Fatal(err)
+	}
+	ps.TargetsSnapshot(func(ts []proxy.Target) {
+		if len(ts) != 1 || ts[0].Model != "llama3.2:3b" {
+			t.Fatalf("only primary model should remain: %+v", ts)
+		}
+	})
+}

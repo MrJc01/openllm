@@ -47,6 +47,15 @@ type ActiveInstance struct {
 	LocalPort  int
 	SSHClient  *ssh.SSHClient
 	CancelFunc context.CancelFunc
+	// ExtraModels: modelos adicionais servidos pela mesma engine (ollama
+	// mantém vários carregados enquanto couberem na VRAM). O proxy roteia
+	// cada um para esta instância. Só em memória: some num restart.
+	ExtraModels []string
+}
+
+// Models devolve o modelo principal seguido dos extras.
+func (a *ActiveInstance) Models() []string {
+	return append([]string{a.Model}, a.ExtraModels...)
 }
 
 type InstanceManager struct {
@@ -935,6 +944,11 @@ func (m *InstanceManager) updateProxyTargets() {
 		}
 
 		targets = append(targets, target)
+		for _, extra := range act.ExtraModels {
+			t := target
+			t.Model = extra
+			targets = append(targets, t)
+		}
 	}
 	// ReplaceLocalTargets preserva backends de inferência (OpenRouter etc.)
 	m.proxyServer.ReplaceLocalTargets(targets)
@@ -1024,6 +1038,7 @@ func (m *InstanceManager) SwapModel(cfg *config.Config, instanceID, newModel str
 		// Modelo novo pronto → atualiza estado e load balancer
 		m.activesMu.Lock()
 		if a, ok := m.actives[instanceID]; ok {
+			a.ExtraModels = removeString(a.ExtraModels, newModel)
 			a.Model = newModel
 			a.GroupID = GroupID(a.Engine, newModel)
 			m.db.SaveInstance(&a.Instance)
@@ -1045,6 +1060,82 @@ func renderEnv(env map[string]string, model string) map[string]string {
 	out := make(map[string]string, len(env))
 	for k, v := range env {
 		out[k] = engines.Render(v, model)
+	}
+	return out
+}
+
+// AddModel baixa e aquece um modelo adicional numa instância em execução,
+// sem trocar o principal. Só engines com model_pull_cmd (ex: ollama).
+func (m *InstanceManager) AddModel(instanceID, newModel string) error {
+	m.activesMu.RLock()
+	act, exists := m.actives[instanceID]
+	var status string
+	var def engines.Definition
+	var already bool
+	if exists {
+		status = act.Status
+		def = resolveEngineDef(act.Instance)
+		for _, mdl := range act.Models() {
+			already = already || mdl == newModel
+		}
+	}
+	m.activesMu.RUnlock()
+
+	switch {
+	case !exists:
+		return fmt.Errorf("instance %s is not active", instanceID)
+	case status != "running":
+		return fmt.Errorf("instance %s is not running (status: %s)", instanceID, status)
+	case strings.TrimSpace(def.ModelPullCmd) == "":
+		return fmt.Errorf("engine %s does not support multiple models (no model_pull_cmd)", def.Name)
+	case already:
+		return fmt.Errorf("model %s is already served by %s", newModel, instanceID)
+	}
+
+	m.AddLog(instanceID, fmt.Sprintf("Add model requested: %s (keeps %s)", newModel, act.Model))
+	go func() {
+		full := engines.Render(def.ModelPullCmd, newModel)
+		if _, err := act.SSHClient.RunCommand(fmt.Sprintf("nohup sh -c %q > /var/log/openllm-model-pull.log 2>&1 &", full)); err != nil {
+			m.AddLog(instanceID, fmt.Sprintf("Add model failed: could not launch pull: %v", err))
+			return
+		}
+		if err := m.waitForModelReady(act.SSHClient, act.Instance, def, newModel); err != nil {
+			m.AddLog(instanceID, fmt.Sprintf("Add model warning: %v", err))
+			return
+		}
+		m.activesMu.Lock()
+		if a, ok := m.actives[instanceID]; ok {
+			a.ExtraModels = append(removeString(a.ExtraModels, newModel), newModel)
+		}
+		m.activesMu.Unlock()
+		m.updateProxyTargets()
+		m.AddLog(instanceID, fmt.Sprintf("Model %s added — now serving %v", newModel, act.Models()))
+	}()
+	return nil
+}
+
+// RemoveModel para de rotear um modelo extra (o principal só sai via swap/stop).
+func (m *InstanceManager) RemoveModel(instanceID, model string) error {
+	m.activesMu.Lock()
+	act, ok := m.actives[instanceID]
+	if ok {
+		act.ExtraModels = removeString(act.ExtraModels, model)
+	}
+	m.activesMu.Unlock()
+	if !ok {
+		return fmt.Errorf("instance %s is not active", instanceID)
+	}
+	m.updateProxyTargets()
+	m.AddLog(instanceID, fmt.Sprintf("Model %s removed from routing", model))
+	return nil
+}
+
+func removeString(list []string, v string) []string {
+	out := list[:0:0]
+	for _, s := range list {
+		if s != v {
+			out = append(out, s)
+		}
 	}
 	return out
 }

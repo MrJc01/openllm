@@ -40,6 +40,8 @@ func (s *ControlServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/deploy", s.handleDeploy)
 	mux.HandleFunc("/scale", s.handleScale)
 	mux.HandleFunc("/swap", s.handleSwap)
+	mux.HandleFunc("/models/add", s.handleAddModel)
+	mux.HandleFunc("/models/remove", s.handleRemoveModel)
 	mux.HandleFunc("/stack", s.handleStack)   // POST = up, DELETE/POST down = down
 	mux.HandleFunc("/stacks", s.handleStacks) // GET = lista stacks
 	mux.HandleFunc("/stop", s.handleStop) // acts as destroy
@@ -80,6 +82,7 @@ type InstanceStatusResponse struct {
 	Engine       string    `json:"engine"`
 	GroupID      string    `json:"group_id,omitempty"`
 	LocalPort    int       `json:"local_port,omitempty"`
+	Models       []string  `json:"models,omitempty"` // principal + extras em execução
 	LastPing     string    `json:"last_ping,omitempty"`
 	TimeActive   string    `json:"time_active"`
 }
@@ -171,6 +174,8 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		MinTPS:   targetTps,
 		Metric:   getMetricNameForModel(payload.Model),
 		Model:    payload.Model,
+		MinCUDA:   engines.Get(engine).MinCUDA,
+		MinDiskGB: engines.Get(engine).DiskGB,
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("search failed: %v", err), http.StatusInternalServerError)
@@ -276,6 +281,7 @@ func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		// Se está ativa em memória, adiciona dados dinâmicos do túnel e heartbeat
 		if act, activeExists := activeMap[inst.ID]; activeExists {
 			statusResp.LocalPort = act.LocalPort
+			statusResp.Models = act.Models()
 			if pingTime, pingExists := s.manager.GetLastPing(inst.ID); pingExists {
 				statusResp.LastPing = time.Since(pingTime).Round(time.Second).String() + " ago"
 			} else {
@@ -835,4 +841,38 @@ func (s *HeartbeatServer) handlePing(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"alive"}`))
+}
+
+// handleAddModel: POST {instance_id, model} — serve um modelo a mais na
+// mesma instância, sem trocar o atual.
+func (s *ControlServer) handleAddModel(w http.ResponseWriter, r *http.Request) {
+	s.handleModelChange(w, r, s.manager.AddModel, "adding")
+}
+
+// handleRemoveModel: POST {instance_id, model} — deixa de rotear um extra.
+func (s *ControlServer) handleRemoveModel(w http.ResponseWriter, r *http.Request) {
+	s.handleModelChange(w, r, s.manager.RemoveModel, "removed")
+}
+
+func (s *ControlServer) handleModelChange(w http.ResponseWriter, r *http.Request, fn func(id, model string) error, state string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload SwapRequestPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.InstanceID == "" || payload.Model == "" {
+		http.Error(w, "instance_id and model are required", http.StatusBadRequest)
+		return
+	}
+	if err := fn(payload.InstanceID, payload.Model); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":     true,
+		"instance_id": payload.InstanceID,
+		"model":       payload.Model,
+		"state":       state,
+	})
 }

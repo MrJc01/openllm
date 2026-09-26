@@ -65,6 +65,21 @@ func (c *Client) Search(ctx context.Context, req providers.SearchRequest) ([]pro
 		"verified": map[string]interface{}{"eq": true},
 		"rentable": map[string]interface{}{"eq": true},
 		"rented":   map[string]interface{}{"eq": false},
+		// Hosts instáveis ou com rede lenta dominam o tempo de deploy.
+		"reliability2": map[string]interface{}{"gte": 0.98},
+		"inet_down":    map[string]interface{}{"gte": 200},
+		"order":        [][]string{{"dph_total", "asc"}},
+		// Hosts na China costumam não alcançar Docker Hub/HuggingFace.
+		"geolocation": map[string]interface{}{"notin": []string{"CN"}},
+	}
+	if req.MinCUDA > 0 {
+		payload["cuda_max_good"] = map[string]interface{}{"gte": req.MinCUDA}
+		if req.MinCUDA >= 13 {
+			payload["compute_cap"] = map[string]interface{}{"gte": 750}
+		}
+	}
+	if req.MinDiskGB > 0 {
+		payload["disk_space"] = map[string]interface{}{"gte": req.MinDiskGB}
 	}
 
 	payloadBytes, err := json.Marshal(payload)
