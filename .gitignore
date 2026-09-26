@@ -29,3 +29,8 @@ daemon.log
 
 # Testes de produção (contém chave)
 prod-test/
+
+# Segredos
+.env
+.env.*
+!.env.example

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,7 +20,31 @@ import (
 	_ "github.com/crom-org/openllm/internal/providers/vastai"
 )
 
+// loadDotEnv lê KEY=VALUE de um .env (segredos fora do git, ex:
+// OPENLLM_VASTAI_API_KEY, HF_TOKEN). Não sobrescreve variáveis já definidas.
+func loadDotEnv(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(strings.TrimPrefix(line, "export "), "=")
+		if !ok {
+			continue
+		}
+		k, v = strings.TrimSpace(k), strings.Trim(strings.TrimSpace(v), `"'`)
+		if _, set := os.LookupEnv(k); !set {
+			os.Setenv(k, v)
+		}
+	}
+}
+
 func main() {
+	loadDotEnv(".env")
 	// Registro permanente: tudo que o daemon loga vai também para
 	// .openllm/logs/openllmd-AAAAMMDD.log (terminal continua recebendo).
 	if dir, err := config.GetStateDir(); err == nil {
