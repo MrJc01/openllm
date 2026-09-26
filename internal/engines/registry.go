@@ -127,6 +127,7 @@ var registry = map[string]Definition{
 			"Qwen/Qwen2.5-Coder-7B-Instruct":    16,
 			"meta-llama/Llama-3.3-70B-Instruct": 40,
 		},
+		DiskGB: 50, // 70B models: ~40GB VRAM + model weights on disk
 	},
 	"comfyui": {
 		Name:         "comfyui",
@@ -147,6 +148,7 @@ var registry = map[string]Definition{
 			"ltx-video-13b": 24,
 			"wan2.1-1.3b":  8,
 		},
+		DiskGB: 50, // flux1-dev/ltx-video-13b: large diffusion models
 	},
 	"faster-whisper": {
 		Name:         "faster-whisper",
