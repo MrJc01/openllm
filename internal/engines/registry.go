@@ -254,7 +254,10 @@ var registry = map[string]Definition{
 		ReadyTimeout: 15,
 		ModelPullCmd: `for i in $(seq 1 200); do curl -sf http://127.0.0.1:8000/health >/dev/null && break; sleep 3; done; ` +
 			`curl -sf -X POST "http://127.0.0.1:8000/v1/models/{{.ServeAs}}"`,
-		ModelReadyCmd: `curl -sf http://127.0.0.1:8000/v1/models | grep -qF '"{{.ServeAs}}"'`,
+		// Pronto = transcreve 1s de silêncio (o speaches só baixa/carrega o
+		// modelo na 1ª transcrição; listar em /v1/models não basta).
+		ModelReadyCmd: `[ -f /tmp/openllm-silence.wav ] || /home/ubuntu/speaches/.venv/bin/python -c "import wave;w=wave.open('/tmp/openllm-silence.wav','wb');w.setnchannels(1);w.setsampwidth(2);w.setframerate(16000);w.writeframes(bytes(32000))"; ` +
+			`curl -sf -m 900 http://127.0.0.1:8000/v1/audio/transcriptions -F file=@/tmp/openllm-silence.wav -F 'model={{.ServeAs}}' >/dev/null`,
 		DiskGB:        30,
 	},
 	"faster-whisper": {
