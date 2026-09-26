@@ -113,9 +113,15 @@ var registry = map[string]Definition{
 		OnStartCmd:   "mkdir -p /root/backends /root/models; /local-ai backends install stablediffusion 2>&1 || true; LOCALAI_ADDRESS=0.0.0.0:8080 /local-ai --models-path /root/models &",
 		HealthPath:   "/health",
 		ReadyTimeout: 20,
+		// /health responde sem nenhum modelo: sem estes dois comandos o LocalAI
+		// "subia" vazio e toda requisição dava `model "X" not found`. O nome
+		// do modelo é o da galeria (ex: sd-1.5-ggml), instalado no servidor
+		// em execução via API (POST /models/apply, id "<galeria>@<modelo>").
+		ModelPullCmd:  `curl -sf -X POST http://127.0.0.1:8080/models/apply -H 'Content-Type: application/json' -d '{"id":"localai@{{.Model}}"}'`,
+		ModelReadyCmd: `curl -sf http://127.0.0.1:8080/v1/models | grep -q '"{{.Model}}"'`,
 		ModelVRAM: map[string]float64{
 			"z-image-turbo-diffusers": 16,
-			"sd-1.5":                  8,
+			"sd-1.5-ggml":             8,
 			"ace-step-turbo":          8,
 			"ltx-2":                   24,
 		},
@@ -214,8 +220,10 @@ var registry = map[string]Definition{
 		Modality:     []string{"tts", "audio"},
 		RemotePort:   8000,
 		DefaultVRAM:  6,
-		DockerImage:  "ghcr.io/coqui-ai/xtts-streaming-server:latest-cuda",
-		OnStartCmd:   "python -m uvicorn main:app --host 0.0.0.0 --port 8000 &",
+		// A tag `latest-cuda` não existe (manifest unknown); as válidas são
+		// latest-cuda118 / latest-cuda121. O código do servidor fica em /app.
+		DockerImage:  "ghcr.io/coqui-ai/xtts-streaming-server:latest-cuda121",
+		OnStartCmd:   "cd /app && COQUI_TOS_AGREED=1 python -m uvicorn main:app --host 0.0.0.0 --port 8000 &",
 		HealthPath:   "/",
 		ReadyTimeout: 15,
 	},

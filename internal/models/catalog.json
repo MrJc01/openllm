@@ -1,28 +1,250 @@
 {
   "models": {
-    "deepseek-r1:7b": { "engine": "ollama", "modality": "text", "vram_gb": 6, "metric": "tps", "metric_target": 20, "estimated_metric": 120, "tags": ["llm", "reasoning"] },
-    "deepseek-r1:70b": { "engine": "ollama", "modality": "text", "vram_gb": 44, "metric": "tps", "metric_target": 8, "estimated_metric": 12, "tags": ["llm", "reasoning"] },
-    "llama3.3:70b": { "engine": "ollama", "modality": "text", "vram_gb": 44, "metric": "tps", "metric_target": 8, "estimated_metric": 13, "tags": ["llm"] },
-    "llama3.2:3b": { "engine": "ollama", "modality": "text", "vram_gb": 4, "metric": "tps", "metric_target": 40, "estimated_metric": 200, "tags": ["llm"] },
-    "qwen2.5-coder:7b": { "engine": "ollama", "modality": "text", "vram_gb": 6, "metric": "tps", "metric_target": 30, "estimated_metric": 125, "tags": ["llm", "code"] },
-    "nomic-embed-text": { "engine": "ollama", "modality": "embedding", "vram_gb": 2, "metric": "tps", "metric_target": 50, "estimated_metric": 200, "tags": ["embedding"] },
-
-    "sdxl": { "engine": "comfyui", "modality": "image", "vram_gb": 12, "metric": "itps", "metric_target": 0.5, "estimated_metric": 1.5, "aliases": ["stable-diffusion-xl"], "tags": ["image"] },
-    "sd-1.5": { "engine": "localai", "modality": "image", "vram_gb": 8, "metric": "itps", "metric_target": 3, "estimated_metric": 8, "aliases": ["stable-diffusion-1.5"], "tags": ["image"] },
-    "z-image-turbo": { "engine": "localai", "modality": "image", "vram_gb": 16, "metric": "itps", "metric_target": 1, "estimated_metric": 4, "tags": ["image"] },
-    "flux1-dev": { "engine": "comfyui", "modality": "image", "vram_gb": 24, "metric": "itps", "metric_target": 0.1, "estimated_metric": 0.3, "aliases": ["flux.1-dev"], "tags": ["image"] },
-
-    "ltx-video-2b": { "engine": "comfyui", "modality": "video", "vram_gb": 12, "metric": "fps", "metric_target": 0.2, "estimated_metric": 0.5, "aliases": ["ltxv-2b"], "tags": ["video"] },
-    "ltx-video-13b": { "engine": "comfyui", "modality": "video", "vram_gb": 24, "metric": "fps", "metric_target": 0.1, "estimated_metric": 0.15, "aliases": ["ltxv-13b"], "tags": ["video"] },
-    "wan2.1-1.3b": { "engine": "comfyui", "modality": "video", "vram_gb": 8, "metric": "fps", "metric_target": 0.5, "estimated_metric": 1.0, "aliases": ["wan-t2v"], "tags": ["video"] },
-
-    "whisper-large-v3": { "engine": "faster-whisper", "modality": "asr", "vram_gb": 10, "metric": "rtf", "metric_target": 0.3, "estimated_metric": 0.15, "aliases": ["large-v3"], "tags": ["audio", "transcription"] },
-    "whisper-medium": { "engine": "faster-whisper", "modality": "asr", "vram_gb": 6, "metric": "rtf", "metric_target": 0.2, "estimated_metric": 0.08, "tags": ["audio", "transcription"] },
-
-    "xtts-v2": { "engine": "xtts", "modality": "tts", "vram_gb": 6, "metric": "rtf", "metric_target": 0.5, "estimated_metric": 0.3, "aliases": ["xtts"], "tags": ["audio", "speech"] },
-    "ace-step-turbo": { "engine": "localai", "modality": "tts", "vram_gb": 8, "metric": "rtf", "metric_target": 0.3, "estimated_metric": 0.2, "tags": ["audio", "music"] },
-
-    "Qwen/Qwen2.5-Coder-7B-Instruct": { "engine": "vllm", "modality": "text", "vram_gb": 16, "metric": "tps", "metric_target": 30, "estimated_metric": 120, "tags": ["llm", "openai-compat"] },
-    "meta-llama/Llama-3.3-70B-Instruct": { "engine": "vllm", "modality": "text", "vram_gb": 40, "metric": "tps", "metric_target": 8, "estimated_metric": 13, "tags": ["llm", "openai-compat"] }
+    "deepseek-r1:7b": {
+      "engine": "ollama",
+      "modality": "text",
+      "vram_gb": 6,
+      "metric": "tps",
+      "metric_target": 20,
+      "estimated_metric": 120,
+      "tags": [
+        "llm",
+        "reasoning"
+      ]
+    },
+    "deepseek-r1:70b": {
+      "engine": "ollama",
+      "modality": "text",
+      "vram_gb": 44,
+      "metric": "tps",
+      "metric_target": 8,
+      "estimated_metric": 12,
+      "tags": [
+        "llm",
+        "reasoning"
+      ]
+    },
+    "llama3.3:70b": {
+      "engine": "ollama",
+      "modality": "text",
+      "vram_gb": 44,
+      "metric": "tps",
+      "metric_target": 8,
+      "estimated_metric": 13,
+      "tags": [
+        "llm"
+      ]
+    },
+    "llama3.2:3b": {
+      "engine": "ollama",
+      "modality": "text",
+      "vram_gb": 4,
+      "metric": "tps",
+      "metric_target": 40,
+      "estimated_metric": 200,
+      "tags": [
+        "llm"
+      ]
+    },
+    "qwen2.5-coder:7b": {
+      "engine": "ollama",
+      "modality": "text",
+      "vram_gb": 6,
+      "metric": "tps",
+      "metric_target": 30,
+      "estimated_metric": 125,
+      "tags": [
+        "llm",
+        "code"
+      ]
+    },
+    "nomic-embed-text": {
+      "engine": "ollama",
+      "modality": "embedding",
+      "vram_gb": 2,
+      "metric": "tps",
+      "metric_target": 50,
+      "estimated_metric": 200,
+      "tags": [
+        "embedding"
+      ]
+    },
+    "sdxl": {
+      "engine": "comfyui",
+      "modality": "image",
+      "vram_gb": 12,
+      "metric": "itps",
+      "metric_target": 0.5,
+      "estimated_metric": 1.5,
+      "aliases": [
+        "stable-diffusion-xl"
+      ],
+      "tags": [
+        "image"
+      ]
+    },
+    "flux1-dev": {
+      "engine": "comfyui",
+      "modality": "image",
+      "vram_gb": 24,
+      "metric": "itps",
+      "metric_target": 0.1,
+      "estimated_metric": 0.3,
+      "aliases": [
+        "flux.1-dev"
+      ],
+      "tags": [
+        "image"
+      ]
+    },
+    "ltx-video-2b": {
+      "engine": "comfyui",
+      "modality": "video",
+      "vram_gb": 12,
+      "metric": "fps",
+      "metric_target": 0.2,
+      "estimated_metric": 0.5,
+      "aliases": [
+        "ltxv-2b"
+      ],
+      "tags": [
+        "video"
+      ]
+    },
+    "ltx-video-13b": {
+      "engine": "comfyui",
+      "modality": "video",
+      "vram_gb": 24,
+      "metric": "fps",
+      "metric_target": 0.1,
+      "estimated_metric": 0.15,
+      "aliases": [
+        "ltxv-13b"
+      ],
+      "tags": [
+        "video"
+      ]
+    },
+    "wan2.1-1.3b": {
+      "engine": "comfyui",
+      "modality": "video",
+      "vram_gb": 8,
+      "metric": "fps",
+      "metric_target": 0.5,
+      "estimated_metric": 1.0,
+      "aliases": [
+        "wan-t2v"
+      ],
+      "tags": [
+        "video"
+      ]
+    },
+    "whisper-large-v3": {
+      "engine": "faster-whisper",
+      "modality": "asr",
+      "vram_gb": 10,
+      "metric": "rtf",
+      "metric_target": 0.3,
+      "estimated_metric": 0.15,
+      "aliases": [
+        "large-v3"
+      ],
+      "tags": [
+        "audio",
+        "transcription"
+      ]
+    },
+    "whisper-medium": {
+      "engine": "faster-whisper",
+      "modality": "asr",
+      "vram_gb": 6,
+      "metric": "rtf",
+      "metric_target": 0.2,
+      "estimated_metric": 0.08,
+      "tags": [
+        "audio",
+        "transcription"
+      ]
+    },
+    "xtts-v2": {
+      "engine": "xtts",
+      "modality": "tts",
+      "vram_gb": 6,
+      "metric": "rtf",
+      "metric_target": 0.5,
+      "estimated_metric": 0.3,
+      "aliases": [
+        "xtts"
+      ],
+      "tags": [
+        "audio",
+        "speech"
+      ]
+    },
+    "ace-step-turbo": {
+      "engine": "localai",
+      "modality": "tts",
+      "vram_gb": 8,
+      "metric": "rtf",
+      "metric_target": 0.3,
+      "estimated_metric": 0.2,
+      "tags": [
+        "audio",
+        "music"
+      ]
+    },
+    "Qwen/Qwen2.5-Coder-7B-Instruct": {
+      "engine": "vllm",
+      "modality": "text",
+      "vram_gb": 16,
+      "metric": "tps",
+      "metric_target": 30,
+      "estimated_metric": 120,
+      "tags": [
+        "llm",
+        "openai-compat"
+      ]
+    },
+    "meta-llama/Llama-3.3-70B-Instruct": {
+      "engine": "vllm",
+      "modality": "text",
+      "vram_gb": 40,
+      "metric": "tps",
+      "metric_target": 8,
+      "estimated_metric": 13,
+      "tags": [
+        "llm",
+        "openai-compat"
+      ]
+    },
+    "sd-1.5-ggml": {
+      "engine": "localai",
+      "modality": "image",
+      "vram_gb": 8,
+      "metric": "itps",
+      "metric_target": 3,
+      "estimated_metric": 8,
+      "aliases": [
+        "stable-diffusion-1.5",
+        "sd-1.5"
+      ],
+      "tags": [
+        "image"
+      ]
+    },
+    "z-image-turbo-diffusers": {
+      "engine": "localai",
+      "modality": "image",
+      "vram_gb": 16,
+      "metric": "itps",
+      "metric_target": 1,
+      "estimated_metric": 4,
+      "tags": [
+        "image"
+      ],
+      "aliases": [
+        "z-image-turbo"
+      ]
+    }
   }
 }
