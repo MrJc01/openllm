@@ -463,6 +463,34 @@
         }
       ],
       "workflow": "trellis2.json"
+    },
+    "kokoro": {
+      "engine": "kokoro",
+      "modality": "tts",
+      "vram_gb": 4,
+      "aliases": [
+        "kokoro-82m"
+      ],
+      "tags": [
+        "tts",
+        "pt-br",
+        "apache-2.0"
+      ],
+      "voice": "pf_dora"
+    },
+    "whisper-large-v3-turbo": {
+      "engine": "speaches",
+      "modality": "asr",
+      "vram_gb": 6,
+      "aliases": [
+        "whisper-turbo"
+      ],
+      "tags": [
+        "asr",
+        "multilingual",
+        "mit"
+      ],
+      "serve_as": "deepdml/faster-whisper-large-v3-turbo-ct2"
     }
   }
 }

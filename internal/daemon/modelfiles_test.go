@@ -52,3 +52,16 @@ func TestModelCmdsFallbacks(t *testing.T) {
 		t.Fatalf("ollama: %q", pull)
 	}
 }
+
+func TestModelCmdsServeAs(t *testing.T) {
+	pull, ready := modelCmds(engines.Get("speaches"), "whisper-large-v3-turbo")
+	for _, c := range []string{pull, ready} {
+		shOK(t, c)
+		if !strings.Contains(c, "deepdml/faster-whisper-large-v3-turbo-ct2") || strings.Contains(c, "{{") {
+			t.Fatalf("serve_as não aplicado: %q", c)
+		}
+	}
+	if _, ready := modelCmds(engines.Get("kokoro"), "kokoro"); !strings.Contains(ready, "/v1/audio/speech") {
+		t.Fatalf("kokoro ready: %q", ready)
+	}
+}

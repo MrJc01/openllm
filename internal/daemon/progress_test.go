@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -25,5 +26,18 @@ func TestSummarizePullProgressOllamaAndEmpty(t *testing.T) {
 	}
 	if got := summarizePullProgress("--parts--\n"); got != "" {
 		t.Fatalf("vazio: %q", got)
+	}
+}
+
+func TestPullLogAndProgressCmdPerModel(t *testing.T) {
+	if got := pullLog("Qwen/Qwen2.5 7B:q4"); got != "/var/log/openllm-pull-Qwen_Qwen2.5_7B_q4.log" {
+		t.Fatalf("pullLog = %q", got)
+	}
+	cmd := pullProgressCmd("wan2.2-ti2v-5b", []string{"wan2.2_vae.safetensors", "x'y.safetensors"})
+	if out, err := exec.Command("sh", "-n", "-c", cmd).CombinedOutput(); err != nil {
+		t.Fatalf("sintaxe: %v %s\n%s", err, out, cmd)
+	}
+	if !strings.Contains(cmd, "openllm-pull-wan2.2-ti2v-5b.log") || !strings.Contains(cmd, "wan2.2_vae.safetensors") {
+		t.Fatalf("progresso não filtra pelo modelo: %s", cmd)
 	}
 }

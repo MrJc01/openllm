@@ -15,7 +15,13 @@ func modelCmds(def engines.Definition, model string) (pull, ready string) {
 	if e, ok := models.ResolveCatalog(model); ok && len(e.Files) > 0 && def.Name == "comfyui" {
 		return comfyFilesPull(e.Files), comfyFilesReady(e.Files)
 	}
-	return engines.Render(def.ModelPullCmd, model), engines.Render(def.ModelReadyCmd, model)
+	// {{.ServeAs}}: id do modelo no servidor (ex: speaches usa o id do HF).
+	serveAs := model
+	if e, ok := models.ResolveCatalog(model); ok && e.ServeAs != "" {
+		serveAs = e.ServeAs
+	}
+	r := strings.NewReplacer("{{.ServeAs}}", serveAs)
+	return r.Replace(engines.Render(def.ModelPullCmd, model)), r.Replace(engines.Render(def.ModelReadyCmd, model))
 }
 
 // comfyFilesPull baixa todos os arquivos em paralelo na pasta do ComfyUI em
@@ -40,4 +46,17 @@ func comfyFilesReady(files []models.ModelFile) string {
 		parts = append(parts, fmt.Sprintf("curl -sf http://127.0.0.1:18188/models/%s | grep -qF %s", f.Dir, shellQuote(f.Name())))
 	}
 	return strings.Join(parts, " && ")
+}
+
+// modelFileNames: arquivos do modelo no catálogo (filtra o progresso dos .part).
+func modelFileNames(model string) []string {
+	e, ok := models.ResolveCatalog(model)
+	if !ok {
+		return nil
+	}
+	names := make([]string, len(e.Files))
+	for i, f := range e.Files {
+		names[i] = f.Name()
+	}
+	return names
 }

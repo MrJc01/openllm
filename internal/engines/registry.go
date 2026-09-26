@@ -219,7 +219,43 @@ var registry = map[string]Definition{
 			"ltx-video-13b": 24,
 			"wan2.1-1.3b":   8,
 		},
-		DiskGB: 50, // flux1-dev/ltx-video-13b: large diffusion models
+		DiskGB: 120, // vários modelos de 10–30 GB na mesma máquina
+	},
+	// Kokoro-82M (TTS leve, Apache 2.0, voz PT pf_dora) com API OpenAI
+	// (/v1/audio/speech). Na Vast o CMD da imagem não roda: o onstart chama o
+	// entrypoint.sh com o ambiente da imagem explícito.
+	"kokoro": {
+		Name:        "kokoro",
+		Modality:    []string{"tts", "audio"},
+		RemotePort:  8880,
+		DefaultVRAM: 4,
+		DockerImage: "ghcr.io/remsky/kokoro-fastapi-gpu:latest",
+		OnStartCmd: "cd /app && PATH=/app/.venv/bin:$PATH PYTHONPATH=/app:/app/api USE_GPU=true DEVICE=gpu " +
+			"PHONEMIZER_ESPEAK_PATH=/usr/bin PHONEMIZER_ESPEAK_DATA=/usr/share/espeak-ng-data ESPEAK_DATA_PATH=/usr/share/espeak-ng-data " +
+			"nohup ./entrypoint.sh > /var/log/kokoro.log 2>&1 &",
+		HealthPath:   "/docs",
+		ReadyTimeout: 15,
+		// Pronto = sintetiza de verdade (o modelo carrega na 1ª chamada).
+		ModelReadyCmd: `curl -sf -m 120 -X POST http://127.0.0.1:8880/v1/audio/speech -H 'Content-Type: application/json' ` +
+			`-d '{"model":"kokoro","input":"ok","voice":"af_heart"}' -o /dev/null`,
+		DiskGB: 30,
+	},
+	// Speaches (ex faster-whisper-server): transcrição com API OpenAI
+	// (/v1/audio/transcriptions). Os modelos são baixados por POST /v1/models/<id HF>.
+	"speaches": {
+		Name:        "speaches",
+		Modality:    []string{"asr", "audio"},
+		RemotePort:  8000,
+		DefaultVRAM: 6,
+		DockerImage: "ghcr.io/speaches-ai/speaches:latest-cuda",
+		OnStartCmd: "cd /home/ubuntu/speaches && HOME=/home/ubuntu PATH=/home/ubuntu/speaches/.venv/bin:$PATH " +
+			"nohup uvicorn --factory speaches.main:create_app --host 0.0.0.0 --port 8000 > /var/log/speaches.log 2>&1 &",
+		HealthPath:   "/health",
+		ReadyTimeout: 15,
+		ModelPullCmd: `for i in $(seq 1 200); do curl -sf http://127.0.0.1:8000/health >/dev/null && break; sleep 3; done; ` +
+			`curl -sf -X POST "http://127.0.0.1:8000/v1/models/{{.ServeAs}}"`,
+		ModelReadyCmd: `curl -sf http://127.0.0.1:8000/v1/models | grep -qF '"{{.ServeAs}}"'`,
+		DiskGB:        30,
 	},
 	"faster-whisper": {
 		Name:        "faster-whisper",

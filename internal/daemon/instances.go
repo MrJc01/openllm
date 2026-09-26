@@ -1125,13 +1125,13 @@ func (m *InstanceManager) SwapModel(cfg *config.Config, instanceID, newModel str
 		engineDef := resolveEngineDef(act.Instance)
 		full, _ := modelCmds(engineDef, newModel)
 
-		if _, err := sshClient.RunCommand(backgroundCmd(full)); err != nil {
+		if _, err := sshClient.RunCommand(backgroundCmd(newModel, full)); err != nil {
 			m.AddLog(instanceID, fmt.Sprintf("Swap failed: could not launch pull: %v", err))
 			return
 		}
 
 		if err := m.waitForModelReady(sshClient, act.Instance, engineDef, newModel); err != nil {
-			m.AddLog(instanceID, fmt.Sprintf("Swap warning: %v (check /var/log/openllm-model-pull.log)", err))
+			m.AddLog(instanceID, fmt.Sprintf("Swap warning: %v (check %s)", err, pullLog(newModel)))
 			return
 		}
 
@@ -1200,7 +1200,7 @@ func (m *InstanceManager) AddModel(instanceID, newModel string) error {
 	m.AddLog(instanceID, fmt.Sprintf("Add model requested: %s (keeps %s)", newModel, act.Model))
 	go func() {
 		full, _ := modelCmds(def, newModel)
-		if _, err := act.SSHClient.RunCommand(backgroundCmd(full)); err != nil {
+		if _, err := act.SSHClient.RunCommand(backgroundCmd(newModel, full)); err != nil {
 			m.AddLog(instanceID, fmt.Sprintf("Add model failed: could not launch pull: %v", err))
 			return
 		}

@@ -184,6 +184,9 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		Model:    payload.Model,
 		MinCUDA:   engines.Get(engine).MinCUDA,
 		MinDiskGB: engines.Get(engine).DiskGB,
+		// Só vLLM e ollama dividem o modelo entre GPUs; as demais (ComfyUI,
+		// servidores de áudio) usam uma placa: a VRAM tem que caber nela.
+		GPUCount: singleGPU(engine),
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("search failed: %v", err), http.StatusInternalServerError)
@@ -885,4 +888,14 @@ func (s *ControlServer) handleModelChange(w http.ResponseWriter, r *http.Request
 		"model":       payload.Model,
 		"state":       state,
 	})
+}
+
+// singleGPU devolve 1 para engines que usam uma única GPU (a busca então não
+// soma a VRAM de várias placas); 0 = sem restrição.
+func singleGPU(engine string) int {
+	switch engine {
+	case "vllm", "ollama":
+		return 0
+	}
+	return 1
 }

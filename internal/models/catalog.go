@@ -20,6 +20,11 @@ type CatalogEntry struct {
 	Files []ModelFile `json:"files,omitempty"`
 	// Workflow: arquivo em uitest/lib/workflows usado para gerar (ComfyUI).
 	Workflow string `json:"workflow,omitempty"`
+	// ServeAs: id do modelo no servidor quando difere do nome do catálogo
+	// (ex: speaches usa o id do HF). O proxy roteia pelo nome do catálogo.
+	ServeAs string `json:"serve_as,omitempty"`
+	// Voice: voz padrão (TTS).
+	Voice string `json:"voice,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
 	// Throughput / quality metrics (usados por search/scale para filtrar ofertas)
 	// Text: "tps" (tokens/s) | Image: "itps" (iterações/s) | Video: "fps" | Audio: "rtf" (real-time factor, menor=pior)

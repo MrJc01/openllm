@@ -73,7 +73,7 @@ func TestBackgroundCmdKeepsShellSyntax(t *testing.T) {
 		inner = strings.ReplaceAll(inner, "http://127.0.0.1", "http://127.0.0.1:1") // não conecta em nada
 		inner = strings.ReplaceAll(inner, "seq 1 400", "seq 1 2")
 		inner = strings.ReplaceAll(inner, "sleep 3", "true")
-		wrapped := strings.Replace(backgroundCmd(inner), " > /var/log/openllm-model-pull.log 2>&1 &", "", 1)
+		wrapped := strings.Replace(backgroundCmd("sd-1.5-ggml", inner), " > "+pullLog("sd-1.5-ggml")+" 2>&1 &", "", 1)
 		out, _ := exec.Command("sh", "-c", wrapped).CombinedOutput()
 		if strings.Contains(string(out), "Syntax error") || strings.Contains(string(out), "syntax error") {
 			t.Fatalf("%s: shell syntax broke:\n%s\n---\n%s", name, out, wrapped)

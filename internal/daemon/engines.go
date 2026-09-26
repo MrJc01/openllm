@@ -46,14 +46,14 @@ func (m *InstanceManager) startEngine(sshClient *ssh.SSHClient, inst storage.Ins
 	}
 
 	go func() {
-		background := backgroundCmd(full)
+		background := backgroundCmd(inst.Model, full)
 		if _, err := sshClient.RunCommand(background); err != nil {
 			log.Printf("[%s] Failed to launch background model pull: %v", inst.ID, err)
 			m.AddLog(inst.ID, fmt.Sprintf("Model pull launch error: %v", err))
 			return
 		}
 		log.Printf("[%s] Model pull launched in background: %s", inst.ID, full)
-		m.AddLog(inst.ID, fmt.Sprintf("Model pull launched in background (log: /var/log/openllm-model-pull.log)"))
+		m.AddLog(inst.ID, fmt.Sprintf("Model pull launched in background (log: %s)", pullLog(inst.Model)))
 	}()
 
 	return nil
@@ -81,7 +81,7 @@ func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst stora
 			return nil
 		}
 		if attempt%5 == 0 { // ~15s: progresso real lido do log do pull no host
-			raw, _ := sshClient.RunCommand(pullProgressCmd)
+			raw, _ := sshClient.RunCommand(pullProgressCmd(targetModel, modelFileNames(targetModel)))
 			msg := summarizePullProgress(raw)
 			if msg == "" {
 				msg = "aguardando início do download"
@@ -93,7 +93,7 @@ func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst stora
 		time.Sleep(3 * time.Second)
 	}
 	m.setModelState(inst.ID, targetModel, "failed")
-	return fmt.Errorf("model %s not ready within 20 minutes (check /var/log/openllm-model-pull.log on the host)", targetModel)
+	return fmt.Errorf("model %s not ready within 20 minutes (check %s on the host)", targetModel, pullLog(targetModel))
 }
 
 // waitForEngineReady faz polling do endpoint de saúde da engine dentro da
@@ -166,8 +166,19 @@ func (m *InstanceManager) warmupModel(sshClient *ssh.SSHClient, inst storage.Ins
 // backgroundCmd roda cmd em background no host remoto, com log em arquivo.
 // Usa aspas simples: com %q (aspas duplas) o shell externo expandia $(...)
 // e $VAR antes da hora e quebrava comandos como `for i in $(seq 1 400)`.
-func backgroundCmd(cmd string) string {
-	return "nohup sh -c " + shellQuote(cmd) + " > /var/log/openllm-model-pull.log 2>&1 &"
+func backgroundCmd(model, cmd string) string {
+	return "nohup sh -c " + shellQuote(cmd) + " > " + pullLog(model) + " 2>&1 &"
+}
+
+// pullLog: um log por modelo, para downloads em paralelo não se misturarem.
+func pullLog(model string) string {
+	safe := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' {
+			return r
+		}
+		return '_'
+	}, model)
+	return "/var/log/openllm-pull-" + safe + ".log"
 }
 
 // shellQuote envolve s em aspas simples, escapando as aspas simples internas.
@@ -175,10 +186,20 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// pullProgressCmd lê o fim do log do pull (curl/ollama reescrevem a linha com
-// \r) e o tamanho dos arquivos .part em andamento.
-const pullProgressCmd = `tail -c 4000 /var/log/openllm-model-pull.log 2>/dev/null | tr '\r' '\n' | grep -v '^[[:space:]]*$' | tail -3; ` +
-	`echo '--parts--'; find / -xdev -name '*.part' -size +1M -mmin -2 2>/dev/null | head -5 | xargs -r du -m --apparent-size 2>/dev/null`
+// pullProgressCmd lê o fim do log do pull do modelo (curl/ollama reescrevem a
+// linha com \r) e o tamanho dos .part em andamento daquele modelo.
+func pullProgressCmd(model string, files []string) string {
+	filter := ""
+	if len(files) > 0 {
+		quoted := make([]string, len(files))
+		for i, f := range files {
+			quoted[i] = "-e " + shellQuote(f)
+		}
+		filter = " | grep -F " + strings.Join(quoted, " ")
+	}
+	return "tail -c 4000 " + pullLog(model) + ` 2>/dev/null | tr '\r' '\n' | grep -v '^[[:space:]]*$' | tail -3; ` +
+		`echo '--parts--'; find / -xdev -name '*.part' -size +1M -mmin -2 2>/dev/null` + filter + ` | head -5 | xargs -r du -m --apparent-size 2>/dev/null`
+}
 
 var (
 	ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
