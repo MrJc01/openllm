@@ -70,6 +70,7 @@ func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst stora
 		return nil
 	}
 	full := engines.Render(readyCmd, targetModel)
+	m.setModelState(inst.ID, targetModel, "loading")
 
 	deadline := time.Now().Add(20 * time.Minute)
 	attempt := 0
@@ -77,6 +78,7 @@ func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst stora
 		if _, err := sshClient.RunCommand(full); err == nil {
 			m.AddLog(inst.ID, fmt.Sprintf("Model %s is ready and available", targetModel))
 			m.warmupModel(sshClient, inst, def, targetModel)
+			m.setModelState(inst.ID, targetModel, "ready")
 			return nil
 		}
 		if attempt%20 == 0 { // loga a cada ~1 min (interval 3s)
@@ -85,6 +87,7 @@ func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst stora
 		attempt++
 		time.Sleep(3 * time.Second)
 	}
+	m.setModelState(inst.ID, targetModel, "failed")
 	return fmt.Errorf("model %s not ready within 20 minutes (check /var/log/openllm-model-pull.log on the host)", targetModel)
 }
 

@@ -87,6 +87,8 @@ type InstanceStatusResponse struct {
 	GroupID      string    `json:"group_id,omitempty"`
 	LocalPort    int       `json:"local_port,omitempty"`
 	Models       []string  `json:"models,omitempty"` // principal + extras em execução
+	// ModelStates: "loading" | "ready" | "failed" por modelo (inclui o alvo de swap/add).
+	ModelStates map[string]string `json:"model_states,omitempty"`
 	LastPing     string    `json:"last_ping,omitempty"`
 	TimeActive   string    `json:"time_active"`
 }
@@ -286,6 +288,7 @@ func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		if act, activeExists := activeMap[inst.ID]; activeExists {
 			statusResp.LocalPort = act.LocalPort
 			statusResp.Models = act.Models()
+			statusResp.ModelStates = act.ModelStatesCopy()
 			if pingTime, pingExists := s.manager.GetLastPing(inst.ID); pingExists {
 				statusResp.LastPing = time.Since(pingTime).Round(time.Second).String() + " ago"
 			} else {

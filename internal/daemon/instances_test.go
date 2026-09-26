@@ -408,3 +408,19 @@ func TestExtraModelsBecomeProxyTargets(t *testing.T) {
 		}
 	})
 }
+
+func TestModelStatesAreSnapshotted(t *testing.T) {
+	m := &InstanceManager{actives: map[string]*ActiveInstance{}}
+	m.actives["i1"] = &ActiveInstance{}
+	m.actives["i1"].ID = "i1"
+	m.setModelState("i1", "ltx-video-2b", "loading")
+	snap := m.GetActiveInstances()[0]
+	m.setModelState("i1", "ltx-video-2b", "ready")
+	if snap.ModelStates["ltx-video-2b"] != "loading" {
+		t.Fatalf("snapshot mudou junto: %v", snap.ModelStates)
+	}
+	if got := m.GetActiveInstances()[0].ModelStates["ltx-video-2b"]; got != "ready" {
+		t.Fatalf("estado = %q, quer ready", got)
+	}
+	m.setModelState("sumiu", "x", "ready") // instância inexistente: não quebra
+}

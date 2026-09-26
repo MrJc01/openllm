@@ -52,6 +52,35 @@ type ActiveInstance struct {
 	// mantém vários carregados enquanto couberem na VRAM). O proxy roteia
 	// cada um para esta instância. Só em memória: some num restart.
 	ExtraModels []string
+	// ModelStates: estado de cada modelo nesta máquina ("loading", "ready",
+	// "failed"), inclusive o alvo de um swap/add ainda baixando. Só em memória.
+	ModelStates map[string]string
+}
+
+// setModelState registra o estado de um modelo numa instância ativa.
+func (m *InstanceManager) setModelState(instID, model, state string) {
+	m.activesMu.Lock()
+	defer m.activesMu.Unlock()
+	act, ok := m.actives[instID]
+	if !ok {
+		return
+	}
+	if act.ModelStates == nil {
+		act.ModelStates = map[string]string{}
+	}
+	act.ModelStates[model] = state
+}
+
+// ModelStatesCopy devolve uma cópia dos estados (seguro para serializar).
+func (a *ActiveInstance) ModelStatesCopy() map[string]string {
+	if len(a.ModelStates) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(a.ModelStates))
+	for k, v := range a.ModelStates {
+		out[k] = v
+	}
+	return out
 }
 
 // Models devolve o modelo principal seguido dos extras.
@@ -997,7 +1026,9 @@ func (m *InstanceManager) GetActiveInstances() []ActiveInstance {
 
 	var list []ActiveInstance
 	for _, act := range m.actives {
-		list = append(list, *act)
+		c := *act
+		c.ModelStates = act.ModelStatesCopy() // o mapa muda em outras goroutines
+		list = append(list, c)
 	}
 	return list
 }
