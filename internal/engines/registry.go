@@ -61,6 +61,11 @@ type Definition struct {
 // disponível (ex: "ollama list | grep -q {{.Model}}"). Suporta {{.Model}}.
 	ModelReadyCmd string `json:"model_ready_cmd"`
 
+	// WarmupCmd (opcional) roda via SSH logo após o modelo ficar pronto e
+	// carrega os pesos na GPU. Sem ele, a 1ª requisição do usuário paga
+	// ~20-40s de inicialização do runner. Suporta {{.Model}}.
+	WarmupCmd string `json:"warmup_cmd,omitempty"`
+
 	// Env são variáveis de ambiente extras definidas no container (ex: HF_TOKEN,
 	// PROVISIONING_SCRIPT). Repassadas ao provedor via DeployRequest.Env.
 	Env map[string]string `json:"env,omitempty"`
@@ -76,12 +81,23 @@ var registry = map[string]Definition{
 		Modality:      []string{"text", "embedding"},
 		RemotePort:    11434,
 		DefaultVRAM:   8,
-		DockerImage:   "ollama/ollama:latest",
-		OnStartCmd:    "ollama serve &",
+		// Imagem/tag do template oficial Vast "Ollama" (maior chance de cache
+		// no host). O entrypoint sobe o ollama em 127.0.0.1:11434 e já inicia
+		// o pull de OLLAMA_MODEL no boot, antes do SSH ficar disponível.
+		DockerImage:   "vastai/ollama:0.34.0",
+		OnStartCmd:    "entrypoint.sh",
+		Env: map[string]string{
+			"OLLAMA_MODEL":   "{{.Model}}",
+			"DATA_DIRECTORY": "/workspace/",
+		},
 		HealthPath:    "/api/tags",
 		ReadyTimeout:  15,
 		ModelPullCmd:  "ollama pull {{.Model}}",
 		ModelReadyCmd: "ollama list | grep -q {{.Model}}",
+		// generate sem prompt só carrega o modelo; modelos de embedding não
+		// aceitam generate, então cai para /api/embed.
+		WarmupCmd: `curl -sf -m 300 http://127.0.0.1:11434/api/generate -d '{"model":"{{.Model}}","keep_alive":"30m"}' >/dev/null || ` +
+			`curl -sf -m 300 http://127.0.0.1:11434/api/embed -d '{"model":"{{.Model}}","input":"","keep_alive":"30m"}' >/dev/null`,
 	},
 	"localai": {
 		Name:         "localai",
@@ -115,12 +131,22 @@ var registry = map[string]Definition{
 	"vllm": {
 		Name:        "vllm",
 		Modality:    []string{"text", "embedding"},
-		RemotePort:  8000,
+		RemotePort:  18000,
 		DefaultVRAM: 16,
 		// Tag pinada (nunca :latest flutuante): deploys reproduzíveis e
 		// cache de layers reaproveitável entre deploys no mesmo host.
-		DockerImage:  "vllm/vllm-openai:v0.30.0",
-		OnStartCmd:   "python3 -m vllm.entrypoints.openai.api_server --port 8000 --model {{.Model}} &",
+		// Template oficial Vast "vLLM": o entrypoint sobe `vllm serve` com
+		// VLLM_MODEL/VLLM_ARGS (porta interna 18000; a 8000 é o proxy com auth).
+		DockerImage: "vastai/vllm:v0.30.0-cuda-13.0",
+		OnStartCmd:  "entrypoint.sh",
+		Env: map[string]string{
+			"VLLM_MODEL":     "{{.Model}}",
+			"VLLM_ARGS":      "--max-model-len 8192 --download-dir /workspace/models --host 127.0.0.1 --port 18000",
+			"AUTO_PARALLEL":  "true",
+			"RAY_ADDRESS":    "127.0.0.1",
+			"RAY_ARGS":       "--head --port 6379 --dashboard-host 127.0.0.1 --dashboard-port 28265",
+			"DATA_DIRECTORY": "/workspace/",
+		},
 		HealthPath:   "/v1/models",
 		ReadyTimeout: 30, // vLLM compila o grafo na primeira subida
 		ModelVRAM: map[string]float64{
@@ -132,13 +158,21 @@ var registry = map[string]Definition{
 	"comfyui": {
 		Name:         "comfyui",
 		Modality:     []string{"image", "video"},
-		RemotePort:   8188,
+		RemotePort:   18188,
 		DefaultVRAM:  12,
 		// cu126-megapak: a variante FULL (Debian com apt — as cu130/slim são
 		// apt-less e o entrypoint do vast.ai não consegue instalar sshd nelas,
 		// o SSH nunca sobe). Compatível com Ada/Ampere (sm_86/sm_89).
-		DockerImage:  "yanwk/comfyui-boot:cu126-megapak",
-		OnStartCmd:   "cd /root; /run_nvidia.sh &",
+		// Template oficial Vast "ComfyUI": porta interna 18188 (8188 é o proxy
+		// com auth); o provisioning baixa o checkpoint do workflow SDXL Turbo.
+		DockerImage: "vastai/comfy:v0.37.0-cuda-13.2-py312",
+		OnStartCmd:  "entrypoint.sh",
+		Env: map[string]string{
+			"COMFYUI_ARGS":                   "--disable-auto-launch --disable-xformers --port 18188 --enable-cors-header",
+			"COMFYUI_API_BASE":               "http://localhost:18188",
+			"PROVISIONING_COMFYUI_WORKFLOWS": "https://raw.githubusercontent.com/Comfy-Org/workflow_templates/refs/heads/main/templates/sdxlturbo_example.json",
+			"DATA_DIRECTORY":                 "/workspace/",
+		},
 		HealthPath:   "/",
 		ReadyTimeout: 20,
 		ModelVRAM: map[string]float64{

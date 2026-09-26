@@ -175,7 +175,7 @@ func (m *InstanceManager) DeployInstance(cfg *config.Config, payload DeployReque
 		OnstartCmd: engines.Render(engineDef.OnStartCmd, payload.Model),
 		APIKey:     cfg.ActiveAPIKey(),
 		Engine:     engineDef.Name,
-		Env:        engineDef.Env,
+		Env:        renderEnv(engineDef.Env, payload.Model),
 		DiskGB:     engineDef.DiskGB,
 	}
 
@@ -980,4 +980,16 @@ func (m *InstanceManager) SwapModel(cfg *config.Config, instanceID, newModel str
 	}()
 
 	return nil
+}
+
+// renderEnv substitui {{.Model}} nos valores do Env da engine (ex: OLLAMA_MODEL).
+func renderEnv(env map[string]string, model string) map[string]string {
+	if len(env) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		out[k] = engines.Render(v, model)
+	}
+	return out
 }

@@ -76,6 +76,7 @@ func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst stora
 	for time.Now().Before(deadline) {
 		if _, err := sshClient.RunCommand(full); err == nil {
 			m.AddLog(inst.ID, fmt.Sprintf("Model %s is ready and available", targetModel))
+			m.warmupModel(sshClient, inst, def, targetModel)
 			return nil
 		}
 		if attempt%20 == 0 { // loga a cada ~1 min (interval 3s)
@@ -138,4 +139,18 @@ func effectiveRemotePort(def engines.Definition, cfg *config.Config, engine stri
 		return def.RemotePort
 	}
 	return remotePortForEngine(cfg, engine)
+}
+// warmupModel carrega o modelo na GPU antes de declarar a instância pronta.
+// Falha não é fatal: o modelo carrega na 1ª requisição, só mais devagar.
+func (m *InstanceManager) warmupModel(sshClient *ssh.SSHClient, inst storage.Instance, def engines.Definition, model string) {
+	cmd := strings.TrimSpace(def.WarmupCmd)
+	if cmd == "" {
+		return
+	}
+	start := time.Now()
+	if _, err := sshClient.RunCommand(engines.Render(cmd, model)); err != nil {
+		m.AddLog(inst.ID, fmt.Sprintf("Warmup of %s failed (first request will be slower): %v", model, err))
+		return
+	}
+	m.AddLog(inst.ID, fmt.Sprintf("Model %s warmed up on GPU in %s", model, time.Since(start).Round(100*time.Millisecond)))
 }

@@ -267,7 +267,7 @@ func TestResolveEngineDef(t *testing.T) {
 	}
 
 	def = resolveEngineDef(storage.Instance{Engine: "comfyui"})
-	if def.Name != "comfyui" || def.RemotePort != 8188 {
+	if def.Name != "comfyui" || def.RemotePort != 18188 {
 		t.Fatalf("builtin lookup failed: %+v", def)
 	}
 

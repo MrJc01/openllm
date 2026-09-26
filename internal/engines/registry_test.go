@@ -96,7 +96,7 @@ func TestRemotePortOverride(t *testing.T) {
 	if RemotePort("ollama", 12345) != 12345 {
 		t.Fatal("ollama should use configured default port")
 	}
-	if RemotePort("comfyui", 12345) != 8188 {
+	if RemotePort("comfyui", 12345) != 18188 {
 		t.Fatal("comfyui should use its own port")
 	}
 }
