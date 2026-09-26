@@ -1,0 +1,39 @@
+# Stack multimodal: texto + imagem + vídeo + áudio em um único endpoint.
+# O proxy local roteia cada path para o serviço correspondente.
+#
+#   POST :11434/api/chat                    → deepseek-r1:7b   (texto)
+#   POST :11434/v1/images/generations       → sdxl             (imagem)
+#   POST :11434/v1/videos/generations       → ltx-video-2b     (vídeo)
+#   POST :11434/v1/audio/transcriptions     → whisper-large-v3 (áudio → texto)
+#
+# Suba com:  openllm stack up examples/multimodal.yaml
+# Derrube:   openllm stack down multimodal
+
+name: multimodal
+
+services:
+  - name: llm
+    model: deepseek-r1:7b
+    instances: 1
+    routes:
+      - /api/chat
+      - /api/generate
+      - /v1/chat/completions
+
+  - name: image
+    model: sdxl
+    instances: 1
+    routes:
+      - /v1/images/generations
+
+  - name: video
+    model: ltx-video-2b
+    instances: 1
+    routes:
+      - /v1/videos/generations
+
+  - name: transcribe
+    model: whisper-large-v3
+    instances: 1
+    routes:
+      - /v1/audio/transcriptions

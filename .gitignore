@@ -1,0 +1,31 @@
+# Binários compilados
+/openllm
+/openllmd
+/openllm-watchdog
+
+# Estado local
+.openllm/
+openllm.json
+
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temporary files & test binaries
+daemon_bin
+daemon.log
+*.js
+
+# Testes de produção (contém chave)
+prod-test/

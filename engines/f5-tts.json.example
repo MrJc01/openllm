@@ -1,0 +1,14 @@
+{
+  "name": "f5-tts",
+  "modality": ["tts", "audio"],
+  "remote_port": 8080,
+  "default_vram": 8,
+  "docker_image": "SEU_USUARIO/f5-tts-server:latest",
+  "on_start_cmd": "python -m f5_tts.server --host 0.0.0.0 --port 8080 --model {{.Model}} &",
+  "health_path": "/",
+  "ready_timeout": 15,
+  "model_vram": {
+    "f5-tts-base": 8,
+    "f5-tts-large": 12
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "known": {
+    "deepseek-r1:7b": {
+      "params_b": 7,
+      "vram_gb": 5.5,
+      "tps_rtx4090": 120
+    },
+    "deepseek-r1:8b": {
+      "params_b": 8,
+      "vram_gb": 6.0,
+      "tps_rtx4090": 110
+    },
+    "deepseek-r1:14b": {
+      "params_b": 14,
+      "vram_gb": 10.5,
+      "tps_rtx4090": 65
+    },
+    "deepseek-r1:32b": {
+      "params_b": 32,
+      "vram_gb": 22.0,
+      "tps_rtx4090": 30
+    },
+    "deepseek-r1:70b": {
+      "params_b": 70,
+      "vram_gb": 45.0,
+      "tps_rtx4090": 12
+    },
+    "llama3.3:70b": {
+      "params_b": 70,
+      "vram_gb": 44.0,
+      "tps_rtx4090": 13
+    },
+    "qwen2.5:72b": {
+      "params_b": 72,
+      "vram_gb": 46.0,
+      "tps_rtx4090": 11
+    },
+    "qwen2.5:7b": {
+      "params_b": 7,
+      "vram_gb": 5.5,
+      "tps_rtx4090": 125
+    },
+    "qwen2.5:14b": {
+      "params_b": 14,
+      "vram_gb": 10.5,
+      "tps_rtx4090": 70
+    },
+    "qwen2.5:32b": {
+      "params_b": 32,
+      "vram_gb": 22.0,
+      "tps_rtx4090": 33
+    },
+    "mistral:7b": {
+      "params_b": 7,
+      "vram_gb": 5.0,
+      "tps_rtx4090": 130
+    },
+    "phi3:3.8b": {
+      "params_b": 3.8,
+      "vram_gb": 3.0,
+      "tps_rtx4090": 200
+    }
+  },
+  "gpu_tps_multipliers": {
+    "RTX 4090": 1.0,
+    "RTX 3090": 0.72,
+    "RTX 3080": 0.50,
+    "RTX 4080": 0.65,
+    "RTX 4070": 0.45,
+    "A100-SXM4-80GB": 1.8,
+    "A100-PCIE-80GB": 1.6,
+    "A100-SXM4-40GB": 1.5,
+    "A100-PCIE-40GB": 1.3,
+    "H100-SXM5": 3.2,
+    "H100-PCIE": 2.8,
+    "A10G": 0.55,
+    "A30": 0.60,
+    "A40": 0.65,
+    "L4": 0.50,
+    "L40": 0.75,
+    "RTX A6000": 0.70,
+    "RTX A5000": 0.55,
+    "RTX A4000": 0.35,
+    "Tesla V100": 0.40
+  }
+}
