@@ -22,10 +22,42 @@ func (p *Provider) Name() string { return "mock" }
 
 func (p *Provider) Search(ctx context.Context, req providers.SearchRequest) ([]providers.Machine, error) {
 	machines := []providers.Machine{
-		{ID: "mock-offer-001", Provider: "mock", GPU: "RTX 4090", VRAM: 24, GPUCount: 1, CostPerHour: 0.35, Location: "BR-Mock", EstimatedTPS: 120},
-		{ID: "mock-offer-002", Provider: "mock", GPU: "RTX 3090", VRAM: 24, GPUCount: 1, CostPerHour: 0.22, Location: "US-Mock", EstimatedTPS: 90},
-		{ID: "mock-offer-003", Provider: "mock", GPU: "A100", VRAM: 80, GPUCount: 1, CostPerHour: 1.10, Location: "EU-Mock", EstimatedTPS: 300},
-		{ID: "mock-offer-004", Provider: "mock", GPU: "RTX 3060", VRAM: 12, GPUCount: 1, CostPerHour: 0.15, Location: "US-Mock", EstimatedTPS: 55},
+		{
+			ID:              "mock-offer-001", Provider: "mock", GPU: "RTX 4090",
+			VRAM: 24, GPUCount: 1, CostPerHour: 0.35, Location: "BR-Mock",
+			EstimatedTPS: 120, EstimatedMetric: 120, Metric: "tps", NetMbps: 5000,
+		},
+		{
+			ID:              "mock-offer-002", Provider: "mock", GPU: "RTX 3090",
+			VRAM: 24, GPUCount: 1, CostPerHour: 0.22, Location: "US-Mock",
+			EstimatedTPS: 90, EstimatedMetric: 90, Metric: "tps", NetMbps: 2000,
+		},
+		{
+			ID:              "mock-offer-003", Provider: "mock", GPU: "A100",
+			VRAM: 80, GPUCount: 1, CostPerHour: 1.10, Location: "EU-Mock",
+			EstimatedTPS: 300, EstimatedMetric: 300, Metric: "tps", NetMbps: 10000,
+		},
+		{
+			ID:              "mock-offer-004", Provider: "mock", GPU: "RTX 3060",
+			VRAM: 12, GPUCount: 1, CostPerHour: 0.15, Location: "US-Mock",
+			EstimatedTPS: 55, EstimatedMetric: 55, Metric: "tps", NetMbps: 1000,
+		},
+		// Extra offers for image/video/audio modalities
+		{
+			ID:              "mock-offer-img-001", Provider: "mock", GPU: "RTX 4090",
+			VRAM: 24, GPUCount: 1, CostPerHour: 0.35, Location: "BR-Mock",
+			EstimatedTPS: 2.5, EstimatedMetric: 2.5, Metric: "itps", NetMbps: 5000,
+		},
+		{
+			ID:              "mock-offer-vid-001", Provider: "mock", GPU: "RTX 4090",
+			VRAM: 24, GPUCount: 1, CostPerHour: 0.35, Location: "BR-Mock",
+			EstimatedTPS: 1.0, EstimatedMetric: 1.0, Metric: "fps", NetMbps: 5000,
+		},
+		{
+			ID:              "mock-offer-aud-001", Provider: "mock", GPU: "RTX 3060",
+			VRAM: 12, GPUCount: 1, CostPerHour: 0.15, Location: "US-Mock",
+			EstimatedTPS: 0.08, EstimatedMetric: 0.08, Metric: "rtf", NetMbps: 1000,
+		},
 	}
 
 	var out []providers.Machine
@@ -33,8 +65,17 @@ func (p *Provider) Search(ctx context.Context, req providers.SearchRequest) ([]p
 		if m.VRAM < req.MinVRAM {
 			continue
 		}
-		if req.MinTPS > 0 && m.EstimatedTPS < req.MinTPS {
-			continue
+		// Metric-aware filter
+		if req.MinTPS > 0 && m.EstimatedMetric > 0 {
+			if req.Metric == "rtf" {
+				if m.EstimatedMetric > req.MinTPS {
+					continue
+				}
+			} else {
+				if m.EstimatedMetric < req.MinTPS {
+					continue
+				}
+			}
 		}
 		if req.GPUCount > 0 && m.GPUCount != req.GPUCount {
 			continue
