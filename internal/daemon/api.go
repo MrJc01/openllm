@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/crom-org/openllm/internal/config"
+	"github.com/crom-org/openllm/internal/engines"
 	"github.com/crom-org/openllm/internal/models"
 	"github.com/crom-org/openllm/internal/providers"
 	"github.com/crom-org/openllm/internal/proxy"
@@ -35,6 +36,7 @@ func NewControlServer(port int, manager *InstanceManager, db *storage.DB) *Contr
 func (s *ControlServer) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", s.handleStatus)
+	mux.HandleFunc("/search", s.handleSearch)
 	mux.HandleFunc("/deploy", s.handleDeploy)
 	mux.HandleFunc("/scale", s.handleScale)
 	mux.HandleFunc("/swap", s.handleSwap)
@@ -80,6 +82,116 @@ type InstanceStatusResponse struct {
 	LocalPort    int       `json:"local_port,omitempty"`
 	LastPing     string    `json:"last_ping,omitempty"`
 	TimeActive   string    `json:"time_active"`
+}
+
+type SearchRequestPayload struct {
+	Model  string  `json:"model"`
+	Engine string  `json:"engine,omitempty"`
+}
+
+type SearchResponsePayload struct {
+	MachineID   string  `json:"machine_id"`
+	GPU         string  `json:"gpu"`
+	VRAM        float64 `json:"vram"`
+	GPUCount    int     `json:"gpu_count"`
+	CostPerHour float64 `json:"cost_per_hour"`
+	Location    string  `json:"location"`
+	NetMbps     float64 `json:"net_mbps"`
+}
+
+func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload SearchRequestPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if payload.Model == "" {
+		http.Error(w, "model is required", http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to load local config openllm.json: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := cfg.Validate(); err != nil {
+		http.Error(w, fmt.Sprintf("invalid configuration: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	provType, err := providers.ProviderType(cfg.Provider)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid provider: %v", err), http.StatusBadRequest)
+		return
+	}
+	if provType != "compute" {
+		http.Error(w, "search requires a compute provider (e.g. vastai)", http.StatusBadRequest)
+		return
+	}
+
+	// Engine padrão: catálogo → ollama
+	engine := payload.Engine
+	if engine == "" {
+		if entry, ok := models.ResolveCatalog(payload.Model); ok {
+			engine = entry.Engine
+		} else {
+			engine = "ollama"
+		}
+	}
+
+	// VRAM do catálogo ou engine
+	targetVram := engines.VRAMFor(engine, payload.Model)
+	if entry, ok := models.ResolveCatalog(payload.Model); ok && entry.VRAMGB > 0 {
+		targetVram = entry.VRAMGB
+	}
+
+	// TPS só para texto
+	targetTps := 0.0
+	if entry, ok := models.ResolveCatalog(payload.Model); ok && entry.Modality == "text" {
+		targetTps = cfg.TpsTarget
+	}
+
+	client, ok := providers.GetCompute(cfg.Provider)
+	if !ok {
+		http.Error(w, fmt.Sprintf("provider %s is not a compute provider", cfg.Provider), http.StatusInternalServerError)
+		return
+	}
+
+	results, err := client.Search(r.Context(), providers.SearchRequest{
+		MinVRAM:  targetVram,
+		MinTPS:   targetTps,
+		Metric:   getMetricNameForModel(payload.Model),
+		Model:    payload.Model,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("search failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if len(results) == 0 {
+		http.Error(w, "no available GPU machines satisfy the requirements", http.StatusNotFound)
+		return
+	}
+
+	// Usa PickBestMachine do daemon (mesma lógica do scale)
+	best := PickBestMachine(results)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(SearchResponsePayload{
+		MachineID:   best.ID,
+		GPU:         best.GPU,
+		VRAM:        best.VRAM,
+		GPUCount:    best.GPUCount,
+		CostPerHour:  best.CostPerHour,
+		Location:     best.Location,
+		NetMbps:      best.NetMbps,
+	})
 }
 
 func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {

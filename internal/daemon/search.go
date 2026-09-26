@@ -72,6 +72,13 @@ func getMetricName(hasEntry bool, entry models.CatalogEntry) string {
 	return "tps"
 }
 
+func getMetricNameForModel(model string) string {
+	if entry, ok := models.ResolveCatalog(model); ok && entry.Metric != "" {
+		return entry.Metric
+	}
+	return "tps"
+}
+
 // PickBestMachine escolhe a melhor oferta: entre as candidatas dentro de uma
 // tolerância de preço (+20% da mais barata), vence a de maior banda de rede.
 // Banda baixa alonga o pull da imagem docker e o download do modelo — o
