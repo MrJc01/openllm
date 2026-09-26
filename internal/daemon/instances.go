@@ -241,6 +241,8 @@ func (m *InstanceManager) backgroundSetup(cfg *config.Config, inst storage.Insta
 	}
 	timeoutChan := time.After(deployTimeout)
 	tick := time.After(0) // 1ª checagem imediata; depois a cada 30s
+	const maxPullErrors = 4
+	pullErrors := 0
 
 WaitLoop:
 	for {
@@ -275,6 +277,19 @@ WaitLoop:
 
 			if sshInfo.StatusMsg != "" {
 				m.AddLog(inst.ID, fmt.Sprintf("Vast.ai Progress [%s]: %s", sshInfo.Status, strings.TrimSpace(sshInfo.StatusMsg)))
+			}
+
+			// Host sem acesso ao registry (ex: TLS handshake timeout no pull)
+			// não se recupera sozinho: desiste após ~2min em vez de pagar 30min.
+			if sshInfo.Status != "running" && strings.Contains(sshInfo.StatusMsg, "Error response from daemon") {
+				pullErrors++
+				if pullErrors >= maxPullErrors {
+					log.Printf("[%s] Error: host cannot pull image: %s", inst.ID, strings.TrimSpace(sshInfo.StatusMsg))
+					m.failSetup(cfg, inst, "host cannot pull docker image: "+strings.TrimSpace(sshInfo.StatusMsg), destroyOnFail)
+					return
+				}
+			} else {
+				pullErrors = 0
 			}
 
 			if sshInfo.Status == "running" && sshInfo.SSHHost != "" && sshInfo.SSHPort != 0 {

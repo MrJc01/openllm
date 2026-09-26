@@ -87,6 +87,8 @@ type InstanceStatusResponse struct {
 type SearchRequestPayload struct {
 	Model  string  `json:"model"`
 	Engine string  `json:"engine,omitempty"`
+	// ExcludeMachineIDs: ofertas ou host_ids que já falharam neste ciclo (ex: sem acesso ao registry).
+	ExcludeMachineIDs []string `json:"exclude_machine_ids,omitempty"`
 }
 
 type SearchResponsePayload struct {
@@ -97,6 +99,7 @@ type SearchResponsePayload struct {
 	CostPerHour float64 `json:"cost_per_hour"`
 	Location    string  `json:"location"`
 	NetMbps     float64 `json:"net_mbps"`
+	HostID      string  `json:"host_id,omitempty"`
 }
 
 func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +177,20 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(payload.ExcludeMachineIDs) > 0 {
+		excluded := make(map[string]bool, len(payload.ExcludeMachineIDs))
+		for _, id := range payload.ExcludeMachineIDs {
+			excluded[id] = true
+		}
+		kept := results[:0]
+		for _, m := range results {
+			if !excluded[m.ID] && (m.HostID == "" || !excluded[m.HostID]) {
+				kept = append(kept, m)
+			}
+		}
+		results = kept
+	}
+
 	if len(results) == 0 {
 		http.Error(w, "no available GPU machines satisfy the requirements", http.StatusNotFound)
 		return
@@ -191,6 +208,7 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		CostPerHour:  best.CostPerHour,
 		Location:     best.Location,
 		NetMbps:      best.NetMbps,
+		HostID:       best.HostID,
 	})
 }
 

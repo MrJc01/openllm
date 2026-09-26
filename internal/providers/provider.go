@@ -37,6 +37,9 @@ type Machine struct {
 	// de preço parecido: banda baixa = deploy lento (pull de imagem) e
 	// download de modelo lento.
 	NetMbps float64 `json:"net_mbps,omitempty"`
+	// HostID identifica a máquina física (várias ofertas/GPUs podem
+	// compartilhar o mesmo host — e os mesmos problemas de rede).
+	HostID string `json:"host_id,omitempty"`
 }
 
 // DeployRequest é usado por ComputeProviders para alugar uma instância

@@ -78,11 +78,11 @@ func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst stora
 			m.AddLog(inst.ID, fmt.Sprintf("Model %s is ready and available", targetModel))
 			return nil
 		}
-		if attempt%6 == 0 { // loga a cada ~1 min (interval 10s)
+		if attempt%20 == 0 { // loga a cada ~1 min (interval 3s)
 			m.AddLog(inst.ID, fmt.Sprintf("Waiting for model %s to download...", targetModel))
 		}
 		attempt++
-		time.Sleep(10 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 	return fmt.Errorf("model %s not ready within 20 minutes (check /var/log/openllm-model-pull.log on the host)", targetModel)
 }

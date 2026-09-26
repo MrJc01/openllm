@@ -166,6 +166,7 @@ func (c *Client) Search(ctx context.Context, req providers.SearchRequest) ([]pro
 			Metric:         req.Metric,
 			Location:       loc,
 			NetMbps:        o.InetDown,
+			HostID:         strconv.Itoa(o.MachineID),
 		})
 	}
 
