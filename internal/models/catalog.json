@@ -9,7 +9,8 @@
       "estimated_metric": 120,
       "tags": [
         "llm",
-        "reasoning"
+        "reasoning",
+        "legado"
       ]
     },
     "deepseek-r1:70b": {
@@ -21,7 +22,8 @@
       "estimated_metric": 12,
       "tags": [
         "llm",
-        "reasoning"
+        "reasoning",
+        "legado"
       ]
     },
     "llama3.3:70b": {
@@ -32,7 +34,8 @@
       "metric_target": 8,
       "estimated_metric": 13,
       "tags": [
-        "llm"
+        "llm",
+        "legado"
       ]
     },
     "llama3.2:3b": {
@@ -491,6 +494,64 @@
         "mit"
       ],
       "serve_as": "deepdml/faster-whisper-large-v3-turbo-ct2"
+    },
+    "qwen3.8:27b": {
+      "engine": "ollama",
+      "modality": "text",
+      "vram_gb": 20,
+      "aliases": [
+        "qwen3.8"
+      ],
+      "tags": [
+        "text",
+        "reasoning",
+        "apache-2.0"
+      ]
+    },
+    "qwen3-vl:8b": {
+      "engine": "ollama",
+      "modality": "text",
+      "vram_gb": 8,
+      "aliases": [
+        "qwen3-vl"
+      ],
+      "tags": [
+        "text",
+        "vision"
+      ]
+    },
+    "gemma4:12b": {
+      "engine": "ollama",
+      "modality": "text",
+      "vram_gb": 10,
+      "aliases": [
+        "gemma4"
+      ],
+      "tags": [
+        "text",
+        "vision"
+      ]
+    },
+    "qwen3-embedding:0.6b": {
+      "engine": "ollama",
+      "modality": "embedding",
+      "vram_gb": 2,
+      "aliases": [
+        "qwen3-embedding"
+      ],
+      "tags": [
+        "embedding",
+        "multilingual"
+      ]
+    },
+    "bge-m3": {
+      "engine": "ollama",
+      "modality": "embedding",
+      "vram_gb": 2,
+      "tags": [
+        "embedding",
+        "multilingual"
+      ]
     }
   }
 }
