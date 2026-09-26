@@ -11,6 +11,7 @@ import (
 	"github.com/crom-org/openllm/internal/config"
 	"github.com/crom-org/openllm/internal/proxy"
 	_ "github.com/crom-org/openllm/internal/providers/mock"
+	"github.com/crom-org/openllm/internal/engines"
 	"github.com/crom-org/openllm/internal/storage"
 )
 
@@ -423,4 +424,22 @@ func TestModelStatesAreSnapshotted(t *testing.T) {
 		t.Fatalf("estado = %q, quer ready", got)
 	}
 	m.setModelState("sumiu", "x", "ready") // instância inexistente: não quebra
+}
+
+func TestResolveEngineDefUsesCurrentModelCommands(t *testing.T) {
+	cur := engines.Get("comfyui")
+	old := cur
+	old.ModelReadyCmd = "velho"
+	old.ModelPullCmd = "velho"
+	b, _ := json.Marshal(old)
+	got := resolveEngineDef(storage.Instance{Engine: "comfyui", EngineDefJSON: string(b)})
+	if got.ModelReadyCmd != cur.ModelReadyCmd || got.ModelPullCmd != cur.ModelPullCmd {
+		t.Fatal("instância antiga deveria usar os comandos de modelo atuais")
+	}
+	// Imagem diferente (deploy custom): mantém os comandos salvos.
+	old.DockerImage = "outra/imagem"
+	b, _ = json.Marshal(old)
+	if got := resolveEngineDef(storage.Instance{Engine: "comfyui", EngineDefJSON: string(b)}); got.ModelReadyCmd != "velho" {
+		t.Fatal("imagem custom não deveria trocar os comandos")
+	}
 }

@@ -247,6 +247,14 @@ func resolveEngineDef(inst storage.Instance) engines.Definition {
 	if inst.EngineDefJSON != "" {
 		var def engines.Definition
 		if err := json.Unmarshal([]byte(inst.EngineDefJSON), &def); err == nil && def.Name != "" {
+			// O container (imagem, env, portas) é o do deploy, mas os comandos
+			// de modelo vêm do registry atual: senão uma máquina antiga nunca
+			// recebe correções (ex: ready do SDXL caía no SD 1.5 e mentia).
+			if cur, ok := engines.TryGet(def.Name); ok && cur.DockerImage == def.DockerImage {
+				def.ModelPullCmd = cur.ModelPullCmd
+				def.ModelReadyCmd = cur.ModelReadyCmd
+				def.WarmupCmd = cur.WarmupCmd
+			}
 			return def
 		}
 	}

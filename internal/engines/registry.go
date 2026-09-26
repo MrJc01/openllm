@@ -220,7 +220,12 @@ var registry = map[string]Definition{
 			`get() { [ -f "$M/$1" ] && return; mkdir -p "$(dirname "$M/$1")"; ` +
 			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$M/$1.part" "$2" && mv "$M/$1.part" "$M/$1"; }; ` +
 			`get checkpoints/ltx-video-2b-v0.9.5.safetensors https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors & ` +
-			`get text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors & wait;; esac`,
+			`get text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors & wait;; ` +
+			`sdxl|sdxl-turbo|stable-diffusion-xl) ` +
+			`. /etc/environment 2>/dev/null; ` +
+			comfyModelsDir +
+			`F="$M/checkpoints/sd_xl_turbo_1.0_fp16.safetensors"; [ -f "$F" ] || { mkdir -p "$M/checkpoints"; ` +
+			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$F.part" https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors && mv "$F.part" "$F"; };; esac`,
 		// Pronto = ComfyUI enxerga os arquivos do modelo pedido.
 		ModelReadyCmd: `case "{{.Model}}" in ` +
 			`wan2.1-1.3b|wan-t2v) B=http://127.0.0.1:18188/models; ` +
@@ -228,7 +233,10 @@ var registry = map[string]Definition{
 			`curl -sf $B/text_encoders | grep -q umt5_xxl && curl -sf $B/vae | grep -q wan_2.1_vae;; ` +
 			`ltx-video-2b|ltxv-2b) B=http://127.0.0.1:18188/models; ` +
 			`curl -sf $B/checkpoints | grep -q ltx-video-2b && curl -sf $B/text_encoders | grep -q t5xxl_fp8;; ` +
-			`*) curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q v1-5-pruned-emaonly;; esac`,
+			`sdxl|sdxl-turbo|stable-diffusion-xl) curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q sd_xl_turbo;; ` +
+			`sd-1.5|sd15|stable-diffusion-1.5) curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q v1-5-pruned-emaonly;; ` +
+			// Modelo sem regra: nunca "pronto" (antes caía no SD 1.5 e mentia).
+			`*) exit 1;; esac`,
 		ReadyTimeout:  20,
 		ModelVRAM: map[string]float64{
 			"sd-1.5":        4,
