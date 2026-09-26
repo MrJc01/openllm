@@ -1062,7 +1062,7 @@ func (m *InstanceManager) SwapModel(cfg *config.Config, instanceID, newModel str
 		engineDef := resolveEngineDef(act.Instance)
 		full := engines.Render(engineDef.ModelPullCmd, newModel)
 
-		if _, err := sshClient.RunCommand(fmt.Sprintf("nohup sh -c %q > /var/log/openllm-model-pull.log 2>&1 &", full)); err != nil {
+		if _, err := sshClient.RunCommand(backgroundCmd(full)); err != nil {
 			m.AddLog(instanceID, fmt.Sprintf("Swap failed: could not launch pull: %v", err))
 			return
 		}
@@ -1132,7 +1132,7 @@ func (m *InstanceManager) AddModel(instanceID, newModel string) error {
 	m.AddLog(instanceID, fmt.Sprintf("Add model requested: %s (keeps %s)", newModel, act.Model))
 	go func() {
 		full := engines.Render(def.ModelPullCmd, newModel)
-		if _, err := act.SSHClient.RunCommand(fmt.Sprintf("nohup sh -c %q > /var/log/openllm-model-pull.log 2>&1 &", full)); err != nil {
+		if _, err := act.SSHClient.RunCommand(backgroundCmd(full)); err != nil {
 			m.AddLog(instanceID, fmt.Sprintf("Add model failed: could not launch pull: %v", err))
 			return
 		}

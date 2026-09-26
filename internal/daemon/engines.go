@@ -46,7 +46,7 @@ func (m *InstanceManager) startEngine(sshClient *ssh.SSHClient, inst storage.Ins
 
 	go func() {
 		full := engines.Render(pullCmd, inst.Model)
-		background := fmt.Sprintf("nohup sh -c %q > /var/log/openllm-model-pull.log 2>&1 &", full)
+		background := backgroundCmd(full)
 		if _, err := sshClient.RunCommand(background); err != nil {
 			log.Printf("[%s] Failed to launch background model pull: %v", inst.ID, err)
 			m.AddLog(inst.ID, fmt.Sprintf("Model pull launch error: %v", err))
@@ -153,4 +153,16 @@ func (m *InstanceManager) warmupModel(sshClient *ssh.SSHClient, inst storage.Ins
 		return
 	}
 	m.AddLog(inst.ID, fmt.Sprintf("Model %s warmed up on GPU in %s", model, time.Since(start).Round(100*time.Millisecond)))
+}
+
+// backgroundCmd roda cmd em background no host remoto, com log em arquivo.
+// Usa aspas simples: com %q (aspas duplas) o shell externo expandia $(...)
+// e $VAR antes da hora e quebrava comandos como `for i in $(seq 1 400)`.
+func backgroundCmd(cmd string) string {
+	return "nohup sh -c " + shellQuote(cmd) + " > /var/log/openllm-model-pull.log 2>&1 &"
+}
+
+// shellQuote envolve s em aspas simples, escapando as aspas simples internas.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

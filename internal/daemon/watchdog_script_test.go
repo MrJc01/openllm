@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"github.com/crom-org/openllm/internal/engines"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -61,5 +62,21 @@ func TestWatchdogScriptPings(t *testing.T) {
 
 	if !strings.Contains(out.String(), "ping ok") || !strings.Contains(out.String(), "ping failed") {
 		t.Fatalf("expected ok then failed, got:\n%s", out.String())
+	}
+}
+
+// Os pull commands das engines precisam sobreviver ao embrulho em background:
+// roda o comando embrulhado de verdade e confere que o shell não quebrou.
+func TestBackgroundCmdKeepsShellSyntax(t *testing.T) {
+	for name, def := range map[string]engines.Definition{"localai": engines.Get("localai"), "ollama": engines.Get("ollama")} {
+		inner := engines.Render(def.ModelPullCmd, "sd-1.5-ggml")
+		inner = strings.ReplaceAll(inner, "http://127.0.0.1", "http://127.0.0.1:1") // não conecta em nada
+		inner = strings.ReplaceAll(inner, "seq 1 400", "seq 1 2")
+		inner = strings.ReplaceAll(inner, "sleep 3", "true")
+		wrapped := strings.Replace(backgroundCmd(inner), " > /var/log/openllm-model-pull.log 2>&1 &", "", 1)
+		out, _ := exec.Command("sh", "-c", wrapped).CombinedOutput()
+		if strings.Contains(string(out), "Syntax error") || strings.Contains(string(out), "syntax error") {
+			t.Fatalf("%s: shell syntax broke:\n%s\n---\n%s", name, out, wrapped)
+		}
 	}
 }
