@@ -7,8 +7,15 @@
   "on_start_cmd": "python -m f5_tts.server --host 0.0.0.0 --port 8080 --model {{.Model}} &",
   "health_path": "/",
   "ready_timeout": 15,
+  "install_cmd": "pip install f5-tts --quiet",
+  "model_pull_cmd": "python -c \"from f5_tts.model import download_model; download_model('{{.Model}}')\"",
+  "model_ready_cmd": "python -c \"from f5_tts.model import list_models; exit(0 if '{{.Model}}' in list_models() else 1)\"",
   "model_vram": {
     "f5-tts-base": 8,
     "f5-tts-large": 12
-  }
+  },
+  "env": {
+    "HF_TOKEN": ""
+  },
+  "disk_gb": 30
 }
