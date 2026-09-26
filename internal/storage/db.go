@@ -70,7 +70,9 @@ func OpenDBInDir(dir string) (*DB, error) {
 }
 
 func openDBAt(dbPath string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", dbPath)
+	// busy_timeout: leituras (/status) não falham com "database is
+	// locked" enquanto deploys paralelos gravam; escritas esperam até 5s.
+	conn, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000")
 	if err != nil {
 		return nil, err
 	}
