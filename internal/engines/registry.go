@@ -93,6 +93,9 @@ var registry = map[string]Definition{
 		Env: map[string]string{
 			"OLLAMA_MODEL":   "{{.Model}}",
 			"DATA_DIRECTORY": "/workspace/",
+			// Imagens vastai/* só sobem os serviços listados em PORTAL_CONFIG
+			// (/etc/portal.yaml); sem ele o supervisor pula o serviço.
+			"PORTAL_CONFIG": "localhost:21434:11434:/:Ollama API",
 		},
 		HealthPath:    "/api/tags",
 		ReadyTimeout:  15,
@@ -162,6 +165,9 @@ var registry = map[string]Definition{
 			"RAY_ADDRESS":    "127.0.0.1",
 			"RAY_ARGS":       "--head --port 6379 --dashboard-host 127.0.0.1 --dashboard-port 28265",
 			"DATA_DIRECTORY": "/workspace/",
+			// Imagens vastai/* só sobem os serviços listados em PORTAL_CONFIG
+			// (/etc/portal.yaml); sem ele o supervisor pula o serviço.
+			"PORTAL_CONFIG": "localhost:8000:18000:/docs:vLLM API",
 		},
 		HealthPath:   "/v1/models",
 		ReadyTimeout: 30, // vLLM compila o grafo na primeira subida
@@ -191,6 +197,9 @@ var registry = map[string]Definition{
 			// subir o ComfyUI (2h num host com HF lento). A imagem já traz o
 			// SD 1.5 em /opt/model_store, então a 1ª imagem não baixa nada.
 			"DATA_DIRECTORY": "/workspace/",
+			// Imagens vastai/* só sobem os serviços listados em PORTAL_CONFIG
+			// (/etc/portal.yaml); sem ele o supervisor pula o serviço.
+			"PORTAL_CONFIG": "localhost:8188:18188:/:ComfyUI",
 		},
 		HealthPath: "/",
 		// Pronto = ComfyUI enxerga o checkpoint embutido do SD 1.5.
