@@ -117,7 +117,11 @@ var registry = map[string]Definition{
 		// "subia" vazio e toda requisição dava `model "X" not found`. O nome
 		// do modelo é o da galeria (ex: sd-1.5-ggml), instalado no servidor
 		// em execução via API (POST /models/apply, id "<galeria>@<modelo>").
-		ModelPullCmd:  `curl -sf -X POST http://127.0.0.1:8080/models/apply -H 'Content-Type: application/json' -d '{"id":"localai@{{.Model}}"}'`,
+		// O pull é disparado antes do servidor terminar de subir: espera o
+		// /readyz (até ~20 min) antes de pedir o modelo, senão o curl falha
+		// em silêncio e o modelo nunca é instalado.
+		ModelPullCmd: `for i in $(seq 1 400); do curl -sf http://127.0.0.1:8080/readyz >/dev/null && break; sleep 3; done; ` +
+			`curl -sf -X POST http://127.0.0.1:8080/models/apply -H 'Content-Type: application/json' -d '{"id":"localai@{{.Model}}"}'`,
 		ModelReadyCmd: `curl -sf http://127.0.0.1:8080/v1/models | grep -q '"{{.Model}}"'`,
 		ModelVRAM: map[string]float64{
 			"z-image-turbo-diffusers": 16,

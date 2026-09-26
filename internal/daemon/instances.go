@@ -392,10 +392,25 @@ WaitLoop:
 	// B. Aguarda SSH aceitar conexões (às vezes o container inicia mas o daemon SSH demora mais)
 	var sshClient *ssh.SSHClient
 	maxRetries, retryDelay := sshRetryConfig()
+	// "connection refused" é normal enquanto o sshd sobe. Já "unable to
+	// authenticate" repetido significa que o túnel do proxy Vast desta
+	// máquina falhou e outro container responde na porta: não se resolve
+	// esperando, então desiste em ~1 min em vez de ~6.
+	const maxAuthFailures = 12
+	authFailures := 0
 	for i := 0; i < maxRetries; i++ {
 		sshClient, err = ssh.Connect(sshInfo.SSHHost, sshInfo.SSHPort, privKeyPath)
 		if err == nil {
 			break
+		}
+		if strings.Contains(err.Error(), "unable to authenticate") {
+			authFailures++
+			if authFailures >= maxAuthFailures {
+				m.markBadHost(sshInfo.MachineID)
+				break
+			}
+		} else {
+			authFailures = 0
 		}
 		log.Printf("[%s] SSH not ready yet, retrying... (%v)", inst.ID, err)
 		time.Sleep(retryDelay)
