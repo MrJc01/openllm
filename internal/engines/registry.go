@@ -207,7 +207,7 @@ var registry = map[string]Definition{
 		// para o ready não ver arquivo pela metade). HF_TOKEN acelera.
 		ModelPullCmd: `case "{{.Model}}" in wan2.1-1.3b|wan-t2v) ` +
 			`. /etc/environment 2>/dev/null; ` +
-			`M=$(dirname "$(find / -maxdepth 5 -type f -path '*ComfyUI/main.py' 2>/dev/null | head -1)")/models; ` +
+			comfyModelsDir +
 			`R=https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files; ` +
 			`get() { [ -f "$M/$1" ] && return; mkdir -p "$(dirname "$M/$1")"; ` +
 			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$M/$1.part" "$R/$1" && mv "$M/$1.part" "$M/$1"; }; ` +
@@ -216,7 +216,7 @@ var registry = map[string]Definition{
 			`get diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors & wait;; ` +
 			`ltx-video-2b|ltxv-2b) ` +
 			`. /etc/environment 2>/dev/null; ` +
-			`M=$(dirname "$(find / -maxdepth 5 -type f -path '*ComfyUI/main.py' 2>/dev/null | head -1)")/models; ` +
+			comfyModelsDir +
 			`get() { [ -f "$M/$1" ] && return; mkdir -p "$(dirname "$M/$1")"; ` +
 			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$M/$1.part" "$2" && mv "$M/$1.part" "$M/$1"; }; ` +
 			`get checkpoints/ltx-video-2b-v0.9.5.safetensors https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors & ` +
@@ -362,6 +362,12 @@ func GetCustom(name string, capabilities []string, customImage string, customCmd
 }
 
 // Render substitui o placeholder {{.Model}} (e a variante {{model}}) por um
+// comfyModelsDir: pasta models/ do ComfyUI QUE ESTÁ RODANDO (cwd do processo).
+// A vastai/comfy tem duas instalações (/opt/workspace-internal e a cópia em
+// /workspace); baixar na errada deixa o modelo invisível para o ComfyUI.
+const comfyModelsDir = `for i in $(seq 1 200); do P=$(pgrep -f 'main[.]py.*--port 18188' | head -1); [ -n "$P" ] && break; sleep 3; done; ` +
+	`M=$(readlink /proc/$P/cwd)/models; `
+
 // nome de modelo em comandos (OnStartCmd, InstallCmd, ModelPullCmd).
 func Render(tpl string, model string) string {
 	if model == "" {
