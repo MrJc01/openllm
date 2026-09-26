@@ -10,11 +10,11 @@ import (
 // qual a modalidade (text/image/audio/video/tts/asr/embedding), VRAM mínima e
 // como baixá-lo (pull), quando a engine não baixa sozinha.
 type CatalogEntry struct {
-	Engine         string   `json:"engine"`
-	Modality       string   `json:"modality"`
-	VRAMGB         float64  `json:"vram_gb"`
-	Pull           string   `json:"pull,omitempty"`
-	Aliases        []string `json:"aliases,omitempty"`
+	Engine   string   `json:"engine"`
+	Modality string   `json:"modality"`
+	VRAMGB   float64  `json:"vram_gb"`
+	Pull     string   `json:"pull,omitempty"`
+	Aliases  []string `json:"aliases,omitempty"`
 	// Files: arquivos que a engine precisa (ComfyUI: pasta em models/ + URL).
 	// O daemon gera o download e a checagem de "pronto" a partir desta lista.
 	Files []ModelFile `json:"files,omitempty"`
@@ -25,11 +25,15 @@ type CatalogEntry struct {
 	ServeAs string `json:"serve_as,omitempty"`
 	// Voice: voz padrão (TTS).
 	Voice string `json:"voice,omitempty"`
-	Tags           []string `json:"tags,omitempty"`
+	// SizeGB: quanto o modelo baixa (0 = já vem na imagem da engine).
+	SizeGB float64 `json:"size_gb,omitempty"`
+	// ReadyMin: tempo medido nos testes reais, do deploy até "pronto" (min).
+	ReadyMin float64  `json:"ready_min,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
 	// Throughput / quality metrics (usados por search/scale para filtrar ofertas)
 	// Text: "tps" (tokens/s) | Image: "itps" (iterações/s) | Video: "fps" | Audio: "rtf" (real-time factor, menor=pior)
-	Metric        string  `json:"metric,omitempty"`
-	MetricTarget  float64 `json:"metric_target,omitempty"`  // mínimo aceitável (para rtf, máximo aceitável)
+	Metric          string  `json:"metric,omitempty"`
+	MetricTarget    float64 `json:"metric_target,omitempty"`    // mínimo aceitável (para rtf, máximo aceitável)
 	EstimatedMetric float64 `json:"estimated_metric,omitempty"` // valor estimado em RTX 4090 de referência
 }
 
@@ -151,6 +155,7 @@ func ListCatalog() map[string]CatalogEntry {
 	}
 	return out
 }
+
 // CatalogByEngine agrupa os modelos do catálogo por engine (para UIs).
 func CatalogByEngine() map[string]map[string]CatalogEntry {
 	out := map[string]map[string]CatalogEntry{}

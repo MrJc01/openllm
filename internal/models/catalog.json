@@ -11,7 +11,9 @@
         "llm",
         "reasoning",
         "legado"
-      ]
+      ],
+      "size_gb": 4.7,
+      "ready_min": 2.3
     },
     "deepseek-r1:70b": {
       "engine": "ollama",
@@ -24,7 +26,8 @@
         "llm",
         "reasoning",
         "legado"
-      ]
+      ],
+      "size_gb": 43
     },
     "llama3.3:70b": {
       "engine": "ollama",
@@ -36,7 +39,8 @@
       "tags": [
         "llm",
         "legado"
-      ]
+      ],
+      "size_gb": 43
     },
     "llama3.2:3b": {
       "engine": "ollama",
@@ -47,7 +51,9 @@
       "estimated_metric": 200,
       "tags": [
         "llm"
-      ]
+      ],
+      "size_gb": 2,
+      "ready_min": 1.5
     },
     "qwen2.5-coder:7b": {
       "engine": "ollama",
@@ -59,7 +65,8 @@
       "tags": [
         "llm",
         "code"
-      ]
+      ],
+      "size_gb": 4.7
     },
     "nomic-embed-text": {
       "engine": "ollama",
@@ -70,7 +77,8 @@
       "estimated_metric": 200,
       "tags": [
         "embedding"
-      ]
+      ],
+      "size_gb": 0.3
     },
     "sdxl": {
       "engine": "comfyui",
@@ -92,21 +100,9 @@
           "url": "https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors"
         }
       ],
-      "workflow": "sdxl-turbo.json"
-    },
-    "flux1-dev": {
-      "engine": "comfyui",
-      "modality": "image",
-      "vram_gb": 24,
-      "metric": "itps",
-      "metric_target": 0.1,
-      "estimated_metric": 0.3,
-      "aliases": [
-        "flux.1-dev"
-      ],
-      "tags": [
-        "image"
-      ]
+      "workflow": "sdxl-turbo.json",
+      "size_gb": 6.9,
+      "ready_min": 6
     },
     "ltx-video-2b": {
       "engine": "comfyui",
@@ -131,21 +127,9 @@
           "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors"
         }
       ],
-      "workflow": "ltxv-2b.json"
-    },
-    "ltx-video-13b": {
-      "engine": "comfyui",
-      "modality": "video",
-      "vram_gb": 24,
-      "metric": "fps",
-      "metric_target": 0.1,
-      "estimated_metric": 0.15,
-      "aliases": [
-        "ltxv-13b"
-      ],
-      "tags": [
-        "video"
-      ]
+      "workflow": "ltxv-2b.json",
+      "size_gb": 11.5,
+      "ready_min": 10
     },
     "wan2.1-1.3b": {
       "engine": "comfyui",
@@ -174,7 +158,8 @@
           "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
         }
       ],
-      "workflow": "wan21-t2v.json"
+      "workflow": "wan21-t2v.json",
+      "size_gb": 9.8
     },
     "whisper-large-v3": {
       "engine": "faster-whisper",
@@ -269,7 +254,9 @@
         "image",
         "embutido"
       ],
-      "workflow": "sd15.json"
+      "workflow": "sd15.json",
+      "size_gb": 0,
+      "ready_min": 2.5
     },
     "z-image-turbo": {
       "engine": "comfyui",
@@ -298,7 +285,9 @@
           "url": "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
         }
       ],
-      "workflow": "z-image-turbo.json"
+      "workflow": "z-image-turbo.json",
+      "size_gb": 20.7,
+      "ready_min": 4.5
     },
     "flux2-klein-4b": {
       "engine": "comfyui",
@@ -327,7 +316,8 @@
           "url": "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/main/split_files/vae/flux2-vae.safetensors"
         }
       ],
-      "workflow": "flux2-klein.json"
+      "workflow": "flux2-klein.json",
+      "size_gb": 16.1
     },
     "qwen-image-2512": {
       "engine": "comfyui",
@@ -355,7 +345,8 @@
           "url": "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors"
         }
       ],
-      "workflow": "qwen-image.json"
+      "workflow": "qwen-image.json",
+      "size_gb": 30.1
     },
     "wan2.2-ti2v-5b": {
       "engine": "comfyui",
@@ -384,7 +375,9 @@
           "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors"
         }
       ],
-      "workflow": "wan22-ti2v-5b.json"
+      "workflow": "wan22-ti2v-5b.json",
+      "size_gb": 18.2,
+      "ready_min": 10
     },
     "ace-step-1.5": {
       "engine": "comfyui",
@@ -404,7 +397,9 @@
           "url": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/checkpoints/ace_step_1.5_turbo_aio.safetensors"
         }
       ],
-      "workflow": "ace-step-1.5.json"
+      "workflow": "ace-step-1.5.json",
+      "size_gb": 10,
+      "ready_min": 10
     },
     "stable-audio-open": {
       "engine": "comfyui",
@@ -428,7 +423,8 @@
           "as": "t5-base.safetensors"
         }
       ],
-      "workflow": "stable-audio.json"
+      "workflow": "stable-audio.json",
+      "size_gb": 5.8
     },
     "trellis2": {
       "engine": "comfyui",
@@ -465,7 +461,9 @@
           "url": "https://huggingface.co/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors"
         }
       ],
-      "workflow": "trellis2.json"
+      "workflow": "trellis2.json",
+      "size_gb": 9.4,
+      "ready_min": 5
     },
     "kokoro": {
       "engine": "kokoro",
@@ -479,7 +477,9 @@
         "pt-br",
         "apache-2.0"
       ],
-      "voice": "pf_dora"
+      "voice": "pf_dora",
+      "size_gb": 0,
+      "ready_min": 7.5
     },
     "whisper-large-v3-turbo": {
       "engine": "speaches",
@@ -493,7 +493,9 @@
         "multilingual",
         "mit"
       ],
-      "serve_as": "deepdml/faster-whisper-large-v3-turbo-ct2"
+      "serve_as": "deepdml/faster-whisper-large-v3-turbo-ct2",
+      "size_gb": 1.6,
+      "ready_min": 11
     },
     "qwen3.8:27b": {
       "engine": "ollama",
@@ -506,7 +508,8 @@
         "text",
         "reasoning",
         "apache-2.0"
-      ]
+      ],
+      "size_gb": 17
     },
     "qwen3-vl:8b": {
       "engine": "ollama",
@@ -518,7 +521,8 @@
       "tags": [
         "text",
         "vision"
-      ]
+      ],
+      "size_gb": 6
     },
     "gemma4:12b": {
       "engine": "ollama",
@@ -530,7 +534,8 @@
       "tags": [
         "text",
         "vision"
-      ]
+      ],
+      "size_gb": 8
     },
     "qwen3-embedding:0.6b": {
       "engine": "ollama",
@@ -542,7 +547,8 @@
       "tags": [
         "embedding",
         "multilingual"
-      ]
+      ],
+      "size_gb": 0.6
     },
     "bge-m3": {
       "engine": "ollama",
@@ -551,7 +557,8 @@
       "tags": [
         "embedding",
         "multilingual"
-      ]
+      ],
+      "size_gb": 1.2
     }
   }
 }

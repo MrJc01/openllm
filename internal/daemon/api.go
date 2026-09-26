@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"sort"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -100,6 +101,8 @@ type SearchRequestPayload struct {
 	Engine string  `json:"engine,omitempty"`
 	// ExcludeMachineIDs: ofertas ou host_ids que já falharam neste ciclo (ex: sem acesso ao registry).
 	ExcludeMachineIDs []string `json:"exclude_machine_ids,omitempty"`
+	// Limit > 1: também devolve as N melhores ofertas em "offers" (uma por host).
+	Limit int `json:"limit,omitempty"`
 }
 
 type SearchResponsePayload struct {
@@ -111,6 +114,8 @@ type SearchResponsePayload struct {
 	Location    string  `json:"location"`
 	NetMbps     float64 `json:"net_mbps"`
 	HostID      string  `json:"host_id,omitempty"`
+	// Offers: a melhor primeiro, depois as mais baratas (só com limit > 1).
+	Offers []SearchResponsePayload `json:"offers,omitempty"`
 }
 
 func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -215,18 +220,25 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	// Usa PickBestMachine do daemon (mesma lógica do scale)
 	best := PickBestMachine(results)
+	toPayload := func(m providers.Machine) SearchResponsePayload {
+		return SearchResponsePayload{
+			MachineID:   m.ID,
+			GPU:         m.GPU,
+			VRAM:        m.VRAM,
+			GPUCount:    m.GPUCount,
+			CostPerHour: m.CostPerHour,
+			Location:    m.Location,
+			NetMbps:     m.NetMbps,
+			HostID:      m.HostID,
+		}
+	}
+	resp := toPayload(best)
+	if payload.Limit > 1 {
+		resp.Offers = topOffers(best, results, payload.Limit, toPayload)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(SearchResponsePayload{
-		MachineID:   best.ID,
-		GPU:         best.GPU,
-		VRAM:        best.VRAM,
-		GPUCount:    best.GPUCount,
-		CostPerHour:  best.CostPerHour,
-		Location:     best.Location,
-		NetMbps:      best.NetMbps,
-		HostID:       best.HostID,
-	})
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -898,4 +910,30 @@ func singleGPU(engine string) int {
 		return 0
 	}
 	return 1
+}
+
+// topOffers: a melhor oferta e as demais mais baratas, no máximo uma por host
+// físico (ofertas do mesmo host costumam falhar juntas).
+func topOffers(best providers.Machine, all []providers.Machine, limit int, conv func(providers.Machine) SearchResponsePayload) []SearchResponsePayload {
+	sorted := append([]providers.Machine(nil), all...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CostPerHour < sorted[j].CostPerHour })
+	seen := map[string]bool{}
+	key := func(m providers.Machine) string {
+		if m.HostID != "" {
+			return "h" + m.HostID
+		}
+		return "m" + m.ID
+	}
+	out := []SearchResponsePayload{conv(best)}
+	seen[key(best)] = true
+	for _, m := range sorted {
+		if len(out) >= limit {
+			break
+		}
+		if !seen[key(m)] {
+			seen[key(m)] = true
+			out = append(out, conv(m))
+		}
+	}
+	return out
 }
