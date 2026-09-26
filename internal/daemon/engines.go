@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -81,8 +82,14 @@ func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst stora
 			m.setModelState(inst.ID, targetModel, "ready")
 			return nil
 		}
-		if attempt%20 == 0 { // loga a cada ~1 min (interval 3s)
-			m.AddLog(inst.ID, fmt.Sprintf("Waiting for model %s to download...", targetModel))
+		if attempt%5 == 0 { // ~15s: progresso real lido do log do pull no host
+			raw, _ := sshClient.RunCommand(pullProgressCmd)
+			msg := summarizePullProgress(raw)
+			if msg == "" {
+				msg = "aguardando início do download"
+			}
+			m.setModelProgress(inst.ID, targetModel, msg)
+			m.AddLog(inst.ID, fmt.Sprintf("Baixando %s: %s", targetModel, msg))
 		}
 		attempt++
 		time.Sleep(3 * time.Second)
@@ -168,4 +175,56 @@ func backgroundCmd(cmd string) string {
 // shellQuote envolve s em aspas simples, escapando as aspas simples internas.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// pullProgressCmd lê o fim do log do pull (curl/ollama reescrevem a linha com
+// \r) e o tamanho dos arquivos .part em andamento.
+const pullProgressCmd = `tail -c 4000 /var/log/openllm-model-pull.log 2>/dev/null | tr '\r' '\n' | grep -v '^[[:space:]]*$' | tail -3; ` +
+	`echo '--parts--'; find / -xdev -name '*.part' -size +1M -mmin -2 2>/dev/null | head -5 | xargs -r du -m --apparent-size 2>/dev/null`
+
+var (
+	ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+	// Linha de progresso do curl: % Total % Received % Xferd Avg-Dl Avg-Up Total Spent Left Speed
+	curlRe = regexp.MustCompile(`^\s*(\d{1,3})\s+(\S+)\s+\d{1,3}\s+(\S+)\s+\S+\s+\S+\s+(\S+)\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s*$`)
+	pctRe  = regexp.MustCompile(`(\d{1,3})%`)
+)
+
+// summarizePullProgress transforma a saída de pullProgressCmd numa linha legível:
+// "45% · 2763M de 6046M · 17.9M/s · falta 0:03:16" (curl) ou a última linha do
+// log (ollama/outros), mais os arquivos .part em andamento.
+func summarizePullProgress(raw string) string {
+	logPart, parts, _ := strings.Cut(ansiRe.ReplaceAllString(raw, ""), "--parts--")
+	lines := strings.Split(strings.TrimSpace(logPart), "\n")
+	var out string
+	for i := len(lines) - 1; i >= 0 && out == ""; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l == "" || strings.HasPrefix(l, "% Total") || strings.HasPrefix(l, "Dload") {
+			continue
+		}
+		if m := curlRe.FindStringSubmatch(l); m != nil {
+			out = fmt.Sprintf("%s%% · %s de %s · %s/s · falta %s", m[1], m[3], m[2], m[6], m[5])
+			if m[1] == "100" {
+				out = fmt.Sprintf("100%% · %s concluído", m[2])
+			}
+		} else if pctRe.MatchString(l) || strings.Contains(l, "pulling") || strings.Contains(l, "success") {
+			if len(l) > 160 {
+				l = l[:160]
+			}
+			out = l
+		}
+	}
+	var files []string
+	for _, f := range strings.Split(strings.TrimSpace(parts), "\n") {
+		if mb, path, ok := strings.Cut(strings.TrimSpace(f), "\t"); ok {
+			name := path[strings.LastIndex(path, "/")+1:]
+			files = append(files, fmt.Sprintf("%s (%s MB)", strings.TrimSuffix(name, ".part"), mb))
+		}
+	}
+	if len(files) > 0 {
+		if out != "" {
+			out += " · "
+		}
+		out += "arquivos: " + strings.Join(files, ", ")
+	}
+	return out
 }

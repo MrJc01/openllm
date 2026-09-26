@@ -89,6 +89,8 @@ type InstanceStatusResponse struct {
 	Models       []string  `json:"models,omitempty"` // principal + extras em execução
 	// ModelStates: "loading" | "ready" | "failed" por modelo (inclui o alvo de swap/add).
 	ModelStates map[string]string `json:"model_states,omitempty"`
+	// ModelProgress: progresso do download por modelo ("45% · 2763M de 6046M · ...").
+	ModelProgress map[string]string `json:"model_progress,omitempty"`
 	LastPing     string    `json:"last_ping,omitempty"`
 	TimeActive   string    `json:"time_active"`
 }
@@ -289,6 +291,7 @@ func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 			statusResp.LocalPort = act.LocalPort
 			statusResp.Models = act.Models()
 			statusResp.ModelStates = act.ModelStatesCopy()
+			statusResp.ModelProgress = copyMap(act.ModelProgress)
 			if pingTime, pingExists := s.manager.GetLastPing(inst.ID); pingExists {
 				statusResp.LastPing = time.Since(pingTime).Round(time.Second).String() + " ago"
 			} else {

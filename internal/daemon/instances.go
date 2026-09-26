@@ -55,6 +55,8 @@ type ActiveInstance struct {
 	// ModelStates: estado de cada modelo nesta máquina ("loading", "ready",
 	// "failed"), inclusive o alvo de um swap/add ainda baixando. Só em memória.
 	ModelStates map[string]string
+	// ModelProgress: última leitura do download de cada modelo (texto curto).
+	ModelProgress map[string]string
 }
 
 // setModelState registra o estado de um modelo numa instância ativa.
@@ -71,13 +73,34 @@ func (m *InstanceManager) setModelState(instID, model, state string) {
 	act.ModelStates[model] = state
 }
 
+// setModelProgress guarda a última leitura de progresso do download.
+func (m *InstanceManager) setModelProgress(instID, model, msg string) {
+	m.activesMu.Lock()
+	defer m.activesMu.Unlock()
+	act, ok := m.actives[instID]
+	if !ok {
+		return
+	}
+	if act.ModelProgress == nil {
+		act.ModelProgress = map[string]string{}
+	}
+	act.ModelProgress[model] = msg
+}
+
 // ModelStatesCopy devolve uma cópia dos estados (seguro para serializar).
 func (a *ActiveInstance) ModelStatesCopy() map[string]string {
 	if len(a.ModelStates) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(a.ModelStates))
-	for k, v := range a.ModelStates {
+	return copyMap(a.ModelStates)
+}
+
+func copyMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
 		out[k] = v
 	}
 	return out
@@ -1035,7 +1058,8 @@ func (m *InstanceManager) GetActiveInstances() []ActiveInstance {
 	var list []ActiveInstance
 	for _, act := range m.actives {
 		c := *act
-		c.ModelStates = act.ModelStatesCopy() // o mapa muda em outras goroutines
+		c.ModelStates = act.ModelStatesCopy() // os mapas mudam em outras goroutines
+		c.ModelProgress = copyMap(act.ModelProgress)
 		list = append(list, c)
 	}
 	return list
