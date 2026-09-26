@@ -1098,6 +1098,11 @@ func renderEnv(env map[string]string, model string) map[string]string {
 	for k, v := range env {
 		out[k] = engines.Render(v, model)
 	}
+	// Token do HuggingFace do ambiente do daemon: downloads autenticados são
+	// mais rápidos e liberam modelos gated.
+	if tok := os.Getenv("HF_TOKEN"); tok != "" {
+		out["HF_TOKEN"] = tok
+	}
 	return out
 }
 

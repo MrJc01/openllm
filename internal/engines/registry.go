@@ -202,8 +202,24 @@ var registry = map[string]Definition{
 			"PORTAL_CONFIG": "localhost:8188:18188:/:ComfyUI",
 		},
 		HealthPath: "/",
-		// Pronto = ComfyUI enxerga o checkpoint embutido do SD 1.5.
-		ModelReadyCmd: `curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q v1-5-pruned-emaonly`,
+		// sd-1.5 vem embutido; wan2.1-1.3b baixa os 3 arquivos repackaged da
+		// comfy-org (~10GB) direto nas pastas de modelos do ComfyUI (.part → mv,
+		// para o ready não ver arquivo pela metade). HF_TOKEN acelera.
+		ModelPullCmd: `case "{{.Model}}" in wan2.1-1.3b|wan-t2v) ` +
+			`. /etc/environment 2>/dev/null; ` +
+			`M=$(dirname "$(find / -maxdepth 5 -type f -path '*ComfyUI/main.py' 2>/dev/null | head -1)")/models; ` +
+			`R=https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files; ` +
+			`get() { [ -f "$M/$1" ] && return; mkdir -p "$(dirname "$M/$1")"; ` +
+			`curl -fL --retry 5 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} -o "$M/$1.part" "$R/$1" && mv "$M/$1.part" "$M/$1"; }; ` +
+			`get vae/wan_2.1_vae.safetensors & ` +
+			`get text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors & ` +
+			`get diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors & wait;; esac`,
+		// Pronto = ComfyUI enxerga os arquivos do modelo pedido.
+		ModelReadyCmd: `case "{{.Model}}" in ` +
+			`wan2.1-1.3b|wan-t2v) B=http://127.0.0.1:18188/models; ` +
+			`curl -sf $B/diffusion_models | grep -q wan2.1_t2v_1.3B && ` +
+			`curl -sf $B/text_encoders | grep -q umt5_xxl && curl -sf $B/vae | grep -q wan_2.1_vae;; ` +
+			`*) curl -sf http://127.0.0.1:18188/models/checkpoints | grep -q v1-5-pruned-emaonly;; esac`,
 		ReadyTimeout:  20,
 		ModelVRAM: map[string]float64{
 			"sd-1.5":        4,
