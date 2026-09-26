@@ -175,6 +175,8 @@ func (m *InstanceManager) DeployInstance(cfg *config.Config, payload DeployReque
 		OnstartCmd: engines.Render(engineDef.OnStartCmd, payload.Model),
 		APIKey:     cfg.ActiveAPIKey(),
 		Engine:     engineDef.Name,
+		Env:        engineDef.Env,
+		DiskGB:     engineDef.DiskGB,
 	}
 
 	log.Printf("Starting deploy on %s for machine %s, model %s, engine %s...", cfg.Provider, payload.MachineID, payload.Model, engineDef.Name)

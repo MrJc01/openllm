@@ -10,12 +10,17 @@ import (
 // qual a modalidade (text/image/audio/video/tts/asr/embedding), VRAM mínima e
 // como baixá-lo (pull), quando a engine não baixa sozinha.
 type CatalogEntry struct {
-	Engine   string   `json:"engine"`
-	Modality string   `json:"modality"`
-	VRAMGB   float64  `json:"vram_gb"`
-	Pull     string   `json:"pull,omitempty"`
-	Aliases  []string `json:"aliases,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
+	Engine         string   `json:"engine"`
+	Modality       string   `json:"modality"`
+	VRAMGB         float64  `json:"vram_gb"`
+	Pull           string   `json:"pull,omitempty"`
+	Aliases        []string `json:"aliases,omitempty"`
+	Tags           []string `json:"tags,omitempty"`
+	// Throughput / quality metrics (usados por search/scale para filtrar ofertas)
+	// Text: "tps" (tokens/s) | Image: "itps" (iterações/s) | Video: "fps" | Audio: "rtf" (real-time factor, menor=pior)
+	Metric        string  `json:"metric,omitempty"`
+	MetricTarget  float64 `json:"metric_target,omitempty"`  // mínimo aceitável (para rtf, máximo aceitável)
+	EstimatedMetric float64 `json:"estimated_metric,omitempty"` // valor estimado em RTX 4090 de referência
 }
 
 type catalogFile struct {

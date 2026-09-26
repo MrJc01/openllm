@@ -14,22 +14,25 @@ import (
 type SearchRequest struct {
 	MinVRAM  float64
 	MinTPS   float64
+	Metric   string // "tps", "itps", "fps", "rtf" — usado p/ estimar se a GPU atende
 	GPUCount int
 	Model    string
 }
 
 // Machine representa uma oferta de GPU disponível para aluguel
 type Machine struct {
-	ID           string  `json:"id"`
-	Provider     string  `json:"provider"`
-	GPU          string  `json:"gpu"`
-	VRAM         float64 `json:"vram"`      // VRAM por GPU em GB
-	GPUCount     int     `json:"gpu_count"`
-	CostPerHour  float64 `json:"cost_per_hour"`
-	EstimatedTPS float64 `json:"estimated_tps"`
-	Location     string  `json:"location"`
-	MaxBid       float64 `json:"max_bid,omitempty"`
-	DirectConfig string  `json:"direct_config,omitempty"`
+	ID             string  `json:"id"`
+	Provider       string  `json:"provider"`
+	GPU            string  `json:"gpu"`
+	VRAM           float64 `json:"vram"`       // VRAM por GPU em GB
+	GPUCount       int     `json:"gpu_count"`
+	CostPerHour    float64 `json:"cost_per_hour"`
+	EstimatedTPS   float64 `json:"estimated_tps"`     // compat: texto (tokens/s)
+	EstimatedMetric float64 `json:"estimated_metric"` // genérico: tps/itps/fps/rtf
+	Metric          string  `json:"metric,omitempty"`  // qual métrica o EstimatedMetric representa
+	Location       string  `json:"location"`
+	MaxBid         float64 `json:"max_bid,omitempty"`
+	DirectConfig   string  `json:"direct_config,omitempty"`
 	// NetMbps é a banda de rede medida do host (inet_down). Desempata ofertas
 	// de preço parecido: banda baixa = deploy lento (pull de imagem) e
 	// download de modelo lento.
@@ -44,6 +47,13 @@ type DeployRequest struct {
 	OnstartCmd string
 	APIKey     string
 	Engine     string // "ollama" (default), "localai"
+	// Env são variáveis de ambiente repassadas ao provedor (ex: Vast.ai
+	// aceita "env" no PUT /asks — permite PROVISIONING_SCRIPT, HF_TOKEN,
+	// etc. sem mexer no modelo SSH + watchdog). Vem de Definition.Env.
+	Env map[string]string
+	// DiskGB é o tamanho de disco (GB) solicitado ao provedor.
+	// 0 = usa o default do provedor (35GB no Vast.ai).
+	DiskGB float64
 }
 
 // InstanceInfo representa uma instância de GPU em execução

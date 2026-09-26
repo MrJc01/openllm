@@ -108,8 +108,9 @@ func GetRequirements(modelName string) (vramGB float64, baseTpsRtx4090 float64) 
 	return vramGB, baseTpsRtx4090
 }
 
-// EstimateTPS estima o TPS para uma determinada GPU e quantidade
-func EstimateTPS(modelName string, gpuModel string, gpuCount int) float64 {
+// EstimateMetric estima a métrica para uma GPU e quantidade.
+// metric: "tps" (tokens/s), "itps" (iterações/s), "fps" (frames/s), "rtf" (real-time factor)
+func EstimateMetric(modelName string, gpuModel string, gpuCount int, metric string) float64 {
 	_, baseTps := GetRequirements(modelName)
 	
 	// Normaliza nome da GPU para tentar encontrar multiplicador
@@ -138,12 +139,24 @@ func EstimateTPS(modelName string, gpuModel string, gpuCount int) float64 {
 		}
 	}
 
-	// O TPS cresce linearmente com a contagem de GPUs, mas com alguma perda de eficiência
+	// O throughput cresce linearmente com a contagem de GPUs, mas com alguma perda de eficiência
 	efficiency := 1.0
 	if gpuCount > 1 {
 		efficiency = 0.9 // Multi-GPU overhead
 	}
 	
-	estimated := baseTps * multiplier * float64(gpuCount) * efficiency
+	// Para métricas não-texto, usamos o estimated_metric do catálogo se disponível
+	// Senão, derivamos do TPS base como proxy
+	baseValue := baseTps
+	if entry, ok := ResolveCatalog(modelName); ok && entry.EstimatedMetric > 0 {
+		baseValue = entry.EstimatedMetric
+	}
+	
+	estimated := baseValue * multiplier * float64(gpuCount) * efficiency
 	return estimated
+}
+
+// EstimateTPS estima o TPS para uma determinada GPU e quantidade (compat)
+func EstimateTPS(modelName string, gpuModel string, gpuCount int) float64 {
+	return EstimateMetric(modelName, gpuModel, gpuCount, "tps")
 }

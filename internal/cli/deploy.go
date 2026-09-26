@@ -128,7 +128,10 @@ var deployCmd = &cobra.Command{
 			if deployVRAM > 0 {
 				targetVram = deployVRAM
 			}
-			gpuCountFilter := cfg.InstancesCount
+			// Filtro de nº de GPUs: apenas via --gpu-count explícito.
+			// cfg.InstancesCount é nº de RÉPLICAS (escala), não nº de GPUs
+			// por máquina — usá-lo aqui escondia ofertas válidas (G5).
+			gpuCountFilter := 0
 			if deployGPUCount > 0 {
 				gpuCountFilter = deployGPUCount
 			}

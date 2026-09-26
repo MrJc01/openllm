@@ -57,12 +57,17 @@ type Definition struct {
 	// downloads longos.
 	ModelPullCmd string `json:"model_pull_cmd"`
 
-	// ModelReadyCmd é o comando SSH que retorna exit 0 quando o modelo está
-	// disponível (ex: "ollama list | grep -q {{.Model}}"). Suporta {{.Model}}.
+// ModelReadyCmd é o comando SSH que retorna exit 0 quando o modelo está
+// disponível (ex: "ollama list | grep -q {{.Model}}"). Suporta {{.Model}}.
 	ModelReadyCmd string `json:"model_ready_cmd"`
 
-	// Env are extra environment variables set on the deploy request.
+	// Env são variáveis de ambiente extras definidas no container (ex: HF_TOKEN,
+	// PROVISIONING_SCRIPT). Repassadas ao provedor via DeployRequest.Env.
 	Env map[string]string `json:"env,omitempty"`
+
+	// DiskGB é o tamanho de disco (GB) solicitado ao provedor para a instância.
+	// 0 = usa o default do daemon (35GB).
+	DiskGB float64 `json:"disk_gb,omitempty"`
 }
 
 var registry = map[string]Definition{
@@ -108,16 +113,18 @@ var registry = map[string]Definition{
 		},
 	},
 	"vllm": {
-		Name:         "vllm",
-		Modality:     []string{"text", "embedding"},
-		RemotePort:   8000,
-		DefaultVRAM:  16,
-		DockerImage:  "vllm/vllm-openai:latest",
+		Name:        "vllm",
+		Modality:    []string{"text", "embedding"},
+		RemotePort:  8000,
+		DefaultVRAM: 16,
+		// Tag pinada (nunca :latest flutuante): deploys reproduzíveis e
+		// cache de layers reaproveitável entre deploys no mesmo host.
+		DockerImage:  "vllm/vllm-openai:v0.30.0",
 		OnStartCmd:   "python3 -m vllm.entrypoints.openai.api_server --port 8000 --model {{.Model}} &",
 		HealthPath:   "/v1/models",
 		ReadyTimeout: 30, // vLLM compila o grafo na primeira subida
 		ModelVRAM: map[string]float64{
-			"Qwen/Qwen2.5-Coder-7B-Instruct":   16,
+			"Qwen/Qwen2.5-Coder-7B-Instruct":    16,
 			"meta-llama/Llama-3.3-70B-Instruct": 40,
 		},
 	},

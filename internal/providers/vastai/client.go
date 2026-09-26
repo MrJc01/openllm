@@ -128,12 +128,22 @@ func (c *Client) Search(ctx context.Context, req providers.SearchRequest) ([]pro
 			continue
 		}
 
-		// Estima o TPS do modelo nessa GPU
-		estimatedTPS := models.EstimateTPS(req.Model, o.GpuName, o.NumGpus)
+		// Estima a métrica do modelo nessa GPU
+		estimatedMetric := models.EstimateMetric(req.Model, o.GpuName, o.NumGpus, req.Metric)
 
-		// Filtra por TPS se especificado
-		if req.MinTPS > 0 && estimatedTPS < req.MinTPS {
-			continue
+		// Filtra por métrica se especificado
+		if req.MinTPS > 0 && estimatedMetric > 0 {
+			if req.Metric == "rtf" {
+				// RTF: menor é melhor (real-time factor)
+				if estimatedMetric > req.MinTPS {
+					continue
+				}
+			} else {
+				// TPS, itps, fps: maior é melhor
+				if estimatedMetric < req.MinTPS {
+					continue
+				}
+			}
 		}
 
 		loc := o.Geolocation
@@ -145,15 +155,17 @@ func (c *Client) Search(ctx context.Context, req providers.SearchRequest) ([]pro
 		}
 
 		results = append(results, providers.Machine{
-			ID:           idStr,
-			Provider:     c.Name(),
-			GPU:          o.GpuName,
-			VRAM:         vramGB,
-			GPUCount:     o.NumGpus,
-			CostPerHour:  o.DphTotal,
-			EstimatedTPS: estimatedTPS,
-			Location:     loc,
-			NetMbps:      o.InetDown,
+			ID:             idStr,
+			Provider:       c.Name(),
+			GPU:            o.GpuName,
+			VRAM:           vramGB,
+			GPUCount:       o.NumGpus,
+			CostPerHour:    o.DphTotal,
+			EstimatedTPS:   estimatedMetric, // compat: usado p/ tps
+			EstimatedMetric: estimatedMetric,
+			Metric:         req.Metric,
+			Location:       loc,
+			NetMbps:        o.InetDown,
 		})
 	}
 
@@ -177,12 +189,21 @@ func (c *Client) Deploy(ctx context.Context, req providers.DeployRequest) (*prov
 
 	// Definimos o template e comando inicial na máquina
 	// O watchdog será copiado via SSH, a engine é iniciada pelo entrypoint/onstart
+	diskGB := req.DiskGB
+	if diskGB <= 0 {
+		diskGB = 35.0 // default
+	}
 	payload := map[string]interface{}{
-		"image":      req.Image,
-		"disk":       35.0, // 35 GB de disco padrão para baixar modelos
-		"runtype":    "ssh", // "ssh" ativa o servidor SSH do Vast.ai
-		"label":      fmt.Sprintf("openllm-%s", strings.ReplaceAll(req.Model, ":", "-")),
-		"onstart":    onstart,
+		"image":   req.Image,
+		"disk":    diskGB,
+		"runtype": "ssh",
+		"label":   fmt.Sprintf("openllm-%s", strings.ReplaceAll(req.Model, ":", "-")),
+		"onstart": onstart,
+	}
+	// Env da engine (Definition.Env) → variáveis de ambiente do container.
+	// Ex: PROVISIONING_SCRIPT, HF_TOKEN. Omitido quando vazio.
+	if len(req.Env) > 0 {
+		payload["env"] = req.Env
 	}
 
 	payloadBytes, err := json.Marshal(payload)
