@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"regexp"
@@ -71,20 +72,26 @@ func (m *InstanceManager) startEngine(sshClient *ssh.SSHClient, inst storage.Ins
 // aborta o deploy — só avisa (o modelo pode ser grande, mas o túnel já está vivo).
 // waitForModelReady espera o MODELO INFORMADO ficar disponível (não inst.Model —
 // durante um swap o modelo alvo é diferente do atual da instância).
-func (m *InstanceManager) waitForModelReady(sshClient cmdRunner, inst storage.Instance, def engines.Definition, targetModel string) error {
+func (m *InstanceManager) waitForModelReady(ctx context.Context, act *ActiveInstance, sshClient cmdRunner, def engines.Definition, targetModel string) error {
 	_, full := modelCmds(def, targetModel)
 	if strings.TrimSpace(full) == "" {
 		return nil
 	}
-	m.setModelState(inst.ID, targetModel, "loading")
+	id := act.ID
+	m.setModelState(act, targetModel, "loading", "")
 
-	deadline := time.Now().Add(20 * time.Minute)
+	wait := orDefault(m.modelWait, defaultModelWait)
+	poll := orDefault(m.modelPoll, defaultModelPoll)
+	deadline := time.Now().Add(wait)
 	attempt := 0
 	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, err := sshClient.RunCommand(full); err == nil {
-			m.AddLog(inst.ID, fmt.Sprintf("Model %s is ready and available", targetModel))
-			m.warmupModel(sshClient, inst, def, targetModel)
-			m.setModelState(inst.ID, targetModel, "ready")
+			m.AddLog(id, fmt.Sprintf("Model %s is ready and available", targetModel))
+			m.warmupModel(sshClient, id, def, targetModel)
+			m.setModelState(act, targetModel, "ready", "")
 			return nil
 		}
 		if attempt%5 == 0 { // ~15s: progresso real lido do log do pull no host
@@ -93,14 +100,19 @@ func (m *InstanceManager) waitForModelReady(sshClient cmdRunner, inst storage.In
 			if msg == "" {
 				msg = "aguardando início do download"
 			}
-			m.setModelProgress(inst.ID, targetModel, msg)
-			m.AddLog(inst.ID, fmt.Sprintf("Baixando %s: %s", targetModel, msg))
+			m.setModelProgress(act, targetModel, msg)
+			m.AddLog(id, fmt.Sprintf("Baixando %s: %s", targetModel, msg))
 		}
 		attempt++
-		time.Sleep(3 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(poll):
+		}
 	}
-	m.setModelState(inst.ID, targetModel, "failed")
-	return fmt.Errorf("model %s not ready within 20 minutes (check %s on the host)", targetModel, pullLog(targetModel))
+	reason := fmt.Sprintf("not ready within %s (check %s on the host)", wait, pullLog(targetModel))
+	m.setModelState(act, targetModel, "failed", reason)
+	return fmt.Errorf("model %s %s", targetModel, reason)
 }
 
 // waitForEngineReady faz polling do endpoint de saúde da engine dentro da
@@ -158,17 +170,17 @@ func effectiveRemotePort(def engines.Definition, cfg *config.Config, engine stri
 
 // warmupModel carrega o modelo na GPU antes de declarar a instância pronta.
 // Falha não é fatal: o modelo carrega na 1ª requisição, só mais devagar.
-func (m *InstanceManager) warmupModel(sshClient cmdRunner, inst storage.Instance, def engines.Definition, model string) {
+func (m *InstanceManager) warmupModel(sshClient cmdRunner, instID string, def engines.Definition, model string) {
 	cmd := strings.TrimSpace(def.WarmupCmd)
 	if cmd == "" {
 		return
 	}
 	start := time.Now()
 	if _, err := sshClient.RunCommand(engines.Render(cmd, model)); err != nil {
-		m.AddLog(inst.ID, fmt.Sprintf("Warmup of %s failed (first request will be slower): %v", model, err))
+		m.AddLog(instID, fmt.Sprintf("Warmup of %s failed (first request will be slower): %v", model, err))
 		return
 	}
-	m.AddLog(inst.ID, fmt.Sprintf("Model %s warmed up on GPU in %s", model, time.Since(start).Round(100*time.Millisecond)))
+	m.AddLog(instID, fmt.Sprintf("Model %s warmed up on GPU in %s", model, time.Since(start).Round(100*time.Millisecond)))
 }
 
 // backgroundCmd roda cmd em background no host remoto, com log em arquivo.

@@ -171,6 +171,12 @@ func (d *Daemon) applyDefaultAutoscalerPolicies() {
 // recoverActiveInstances lê instâncias com status "running" ou "deploying" do DB no boot do daemon
 // e tenta re-estabelecer a conexão e túneis SSH em background.
 func (d *Daemon) recoverActiveInstances() {
+	// Limpeza de instance_models: órfãs e falhas de add/swap velhas.
+	if n, err := d.db.SweepInstanceModels(failedModelTTL); err != nil {
+		log.Printf("instance_models sweep error: %v", err)
+	} else if n > 0 {
+		log.Printf("instance_models sweep: removed %d stale row(s)", n)
+	}
 	activeInsts, err := d.db.ListActiveInstances()
 	if err != nil {
 		log.Printf("Database recover error: %v", err)

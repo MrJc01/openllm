@@ -3,6 +3,8 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -72,7 +74,9 @@ func OpenDBInDir(dir string) (*DB, error) {
 func openDBAt(dbPath string) (*DB, error) {
 	// busy_timeout: leituras (/status) não falham com "database is
 	// locked" enquanto deploys paralelos gravam; escritas esperam até 5s.
-	conn, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000")
+	// WAL: leitores não bloqueiam o escritor; _txlock=immediate: transações
+	// pegam o lock de escrita no BEGIN (sem deadlock de upgrade read→write).
+	conn, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&_journal_mode=WAL&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
@@ -116,17 +120,6 @@ func (s *DB) initSchema() error {
 			created_at DATETIME,
 			stopped_at DATETIME
 		);`,
-		// instance_models: conjunto de modelos servidos por instância (principal,
-		// extras e alvos de add/swap em andamento) e o último estado conhecido.
-		// Tabela nova (IF NOT EXISTS): bancos antigos migram sem perda.
-		`CREATE TABLE IF NOT EXISTS instance_models (
-			instance_id TEXT NOT NULL,
-			model TEXT NOT NULL,
-			role TEXT NOT NULL DEFAULT 'extra',
-			state TEXT NOT NULL DEFAULT '',
-			updated_at DATETIME,
-			PRIMARY KEY (instance_id, model)
-		);`,
 		`CREATE TABLE IF NOT EXISTS groups (
 			id TEXT PRIMARY KEY,
 			stack TEXT,
@@ -160,7 +153,7 @@ func (s *DB) initSchema() error {
 		}
 	}
 
-	return nil
+	return s.migrate()
 }
 
 // --- Operações de Perfis ---
@@ -387,7 +380,9 @@ func (s *DB) withTx(fn func(tx *sql.Tx) error) error {
 		return err
 	}
 	if err := fn(tx); err != nil {
-		tx.Rollback()
+		if rerr := tx.Rollback(); rerr != nil {
+			return errors.Join(err, fmt.Errorf("rollback: %w", rerr))
+		}
 		return err
 	}
 	return tx.Commit()

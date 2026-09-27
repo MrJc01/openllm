@@ -387,6 +387,7 @@ func TestExtraModelsBecomeProxyTargets(t *testing.T) {
 		Instance:    storage.Instance{ID: "i1", Status: "running", Engine: "ollama", Model: "llama3.2:3b"},
 		LocalPort:   40001,
 		ExtraModels: []string{"nomic-embed-text"},
+		ModelStates: map[string]string{"nomic-embed-text": "ready"}, // extra só roteia pronto
 	}
 	m.updateProxyTargets()
 
@@ -412,18 +413,21 @@ func TestExtraModelsBecomeProxyTargets(t *testing.T) {
 
 func TestModelStatesAreSnapshotted(t *testing.T) {
 	m := &InstanceManager{actives: map[string]*ActiveInstance{}}
-	m.actives["i1"] = &ActiveInstance{}
-	m.actives["i1"].ID = "i1"
-	m.setModelState("i1", "ltx-video-2b", "loading")
+	act := &ActiveInstance{}
+	act.ID, act.Model = "i1", "ltx-video-2b"
+	m.actives["i1"] = act
+	m.setModelState(act, "ltx-video-2b", "loading", "")
 	snap := m.GetActiveInstances()[0]
-	m.setModelState("i1", "ltx-video-2b", "ready")
+	m.setModelState(act, "ltx-video-2b", "ready", "")
 	if snap.ModelStates["ltx-video-2b"] != "loading" {
 		t.Fatalf("snapshot mudou junto: %v", snap.ModelStates)
 	}
 	if got := m.GetActiveInstances()[0].ModelStates["ltx-video-2b"]; got != "ready" {
 		t.Fatalf("estado = %q, quer ready", got)
 	}
-	m.setModelState("sumiu", "x", "ready") // instância inexistente: não quebra
+	gone := &ActiveInstance{}
+	gone.ID = "sumiu"
+	m.setModelState(gone, "x", "ready", "") // instância inexistente: não quebra
 }
 
 func TestResolveEngineDefUsesCurrentModelCommands(t *testing.T) {

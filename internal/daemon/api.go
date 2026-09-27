@@ -92,8 +92,10 @@ type InstanceStatusResponse struct {
 	ModelStates map[string]string `json:"model_states,omitempty"`
 	// ModelProgress: progresso do download por modelo ("45% · 2763M de 6046M · ...").
 	ModelProgress map[string]string `json:"model_progress,omitempty"`
-	LastPing      string            `json:"last_ping,omitempty"`
-	TimeActive    string            `json:"time_active"`
+	// ModelDetails: motivo da falha por modelo (add/swap/reconcile).
+	ModelDetails map[string]string `json:"model_details,omitempty"`
+	LastPing     string            `json:"last_ping,omitempty"`
+	TimeActive   string            `json:"time_active"`
 }
 
 type SearchRequestPayload struct {
@@ -324,7 +326,7 @@ func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		if activeExists {
 			live = &act
 		}
-		statusResp.Models, statusResp.ModelStates = mergeModelStatus(inst, persisted[inst.ID], live)
+		statusResp.Models, statusResp.ModelStates, statusResp.ModelDetails = mergeModelStatus(inst, persisted[inst.ID], live)
 
 		// Se está ativa em memória, adiciona dados dinâmicos do túnel e heartbeat
 		if activeExists {
@@ -971,10 +973,10 @@ func gpuCount(engine string, asked int) int {
 }
 
 // mergeModelStatus combina o conjunto persistido com o estado em memória.
-// Models: principal + extras roteados (memória, se ativa; senão o banco).
-// States: último estado persistido sobreposto pelo estado vivo.
-func mergeModelStatus(inst storage.Instance, rows []storage.InstanceModel, live *ActiveInstance) ([]string, map[string]string) {
-	states := map[string]string{}
+// Models: principal + extras roteáveis (memória, se ativa; senão o banco).
+// States/Details: último valor persistido sobreposto pelo vivo.
+func mergeModelStatus(inst storage.Instance, rows []storage.InstanceModel, live *ActiveInstance) ([]string, map[string]string, map[string]string) {
+	states, details := map[string]string{}, map[string]string{}
 	var models []string
 	if live != nil {
 		models = live.Models()
@@ -985,6 +987,9 @@ func mergeModelStatus(inst storage.Instance, rows []storage.InstanceModel, live 
 		if r.State != "" {
 			states[r.Model] = r.State
 		}
+		if r.Detail != "" {
+			details[r.Model] = r.Detail
+		}
 		if live == nil && r.Role == storage.RoleExtra && r.Model != inst.Model {
 			models = append(models, r.Model)
 		}
@@ -992,10 +997,18 @@ func mergeModelStatus(inst storage.Instance, rows []storage.InstanceModel, live 
 	if live != nil {
 		for k, v := range live.ModelStates {
 			states[k] = v
+			if d := live.ModelDetails[k]; d != "" {
+				details[k] = d
+			} else {
+				delete(details, k)
+			}
 		}
 	}
 	if len(states) == 0 {
 		states = nil
 	}
-	return models, states
+	if len(details) == 0 {
+		details = nil
+	}
+	return models, states, details
 }
