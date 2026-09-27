@@ -81,6 +81,10 @@ type OfferPricer interface {
 
 // CheckOfferPrice recusa (ErrPriceAboveMax) se price > max*PriceTolerance.
 func CheckOfferPrice(price, max float64) error {
+	// Preço ≤ 0 não é um preço verificado: com teto pedido, recusa (fail-closed).
+	if max > 0 && price <= 0 {
+		return fmt.Errorf("%w: offer price not verified ($%.4f/h)", ErrPriceAboveMax, price)
+	}
 	if max > 0 && price > max*PriceTolerance {
 		return fmt.Errorf("%w: current $%.4f/h > max $%.4f/h (+5%%)", ErrPriceAboveMax, price, max)
 	}
