@@ -17,9 +17,11 @@ func (c *Client) OfferPrice(ctx context.Context, machineID, apiKey string) (floa
 	if err != nil {
 		return 0, fmt.Errorf("invalid offer id %q", machineID)
 	}
+	// "id" não filtra na busca da Vast (volta vazio); "ask_contract_id" é o
+	// mesmo número da oferta e filtra (conferido na API real).
 	body, _ := json.Marshal(map[string]interface{}{
-		"id":    map[string]interface{}{"eq": id},
-		"limit": 1,
+		"ask_contract_id": map[string]interface{}{"eq": id},
+		"limit":           1,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://console.vast.ai/api/v0/bundles/", bytes.NewReader(body))
 	if err != nil {
