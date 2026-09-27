@@ -317,7 +317,8 @@
         }
       ],
       "workflow": "flux2-klein.json",
-      "size_gb": 16.1
+      "size_gb": 16.1,
+      "ready_min": 5
     },
     "qwen-image-2512": {
       "engine": "comfyui",
@@ -346,7 +347,8 @@
         }
       ],
       "workflow": "qwen-image.json",
-      "size_gb": 30.1
+      "size_gb": 30.1,
+      "ready_min": 12
     },
     "wan2.2-ti2v-5b": {
       "engine": "comfyui",
@@ -424,7 +426,8 @@
         }
       ],
       "workflow": "stable-audio.json",
-      "size_gb": 5.8
+      "size_gb": 5.8,
+      "ready_min": 8
     },
     "trellis2": {
       "engine": "comfyui",
