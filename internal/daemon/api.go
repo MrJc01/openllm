@@ -1,12 +1,12 @@
 package daemon
 
 import (
-	"sort"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,7 +49,7 @@ func (s *ControlServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/models/remove", s.handleRemoveModel)
 	mux.HandleFunc("/stack", s.handleStack)   // POST = up, DELETE/POST down = down
 	mux.HandleFunc("/stacks", s.handleStacks) // GET = lista stacks
-	mux.HandleFunc("/stop", s.handleStop) // acts as destroy
+	mux.HandleFunc("/stop", s.handleStop)     // acts as destroy
 	mux.HandleFunc("/pause", s.handlePause)
 	mux.HandleFunc("/resume", s.handleResume)
 	mux.HandleFunc("/logs", s.handleLogs)
@@ -74,31 +74,31 @@ func (s *ControlServer) Start(ctx context.Context) error {
 }
 
 type InstanceStatusResponse struct {
-	ID           string    `json:"id"`
-	MachineID    string    `json:"machine_id"`
-	GPU          string    `json:"gpu"`
-	GPUCount     int       `json:"gpu_count"`
-	VRAM         float64   `json:"vram"`
-	CostPerHour  float64   `json:"cost_per_hour"`
-	SSHHost      string    `json:"ssh_host"`
-	SSHPort      int       `json:"ssh_port"`
-	Status       string    `json:"status"`
-	Model        string    `json:"model"`
-	Engine       string    `json:"engine"`
-	GroupID      string    `json:"group_id,omitempty"`
-	LocalPort    int       `json:"local_port,omitempty"`
-	Models       []string  `json:"models,omitempty"` // principal + extras em execução
+	ID          string   `json:"id"`
+	MachineID   string   `json:"machine_id"`
+	GPU         string   `json:"gpu"`
+	GPUCount    int      `json:"gpu_count"`
+	VRAM        float64  `json:"vram"`
+	CostPerHour float64  `json:"cost_per_hour"`
+	SSHHost     string   `json:"ssh_host"`
+	SSHPort     int      `json:"ssh_port"`
+	Status      string   `json:"status"`
+	Model       string   `json:"model"`
+	Engine      string   `json:"engine"`
+	GroupID     string   `json:"group_id,omitempty"`
+	LocalPort   int      `json:"local_port,omitempty"`
+	Models      []string `json:"models,omitempty"` // principal + extras em execução
 	// ModelStates: "loading" | "ready" | "failed" por modelo (inclui o alvo de swap/add).
 	ModelStates map[string]string `json:"model_states,omitempty"`
 	// ModelProgress: progresso do download por modelo ("45% · 2763M de 6046M · ...").
 	ModelProgress map[string]string `json:"model_progress,omitempty"`
-	LastPing     string    `json:"last_ping,omitempty"`
-	TimeActive   string    `json:"time_active"`
+	LastPing      string            `json:"last_ping,omitempty"`
+	TimeActive    string            `json:"time_active"`
 }
 
 type SearchRequestPayload struct {
-	Model  string  `json:"model"`
-	Engine string  `json:"engine,omitempty"`
+	Model  string `json:"model"`
+	Engine string `json:"engine,omitempty"`
 	// ExcludeMachineIDs: ofertas ou host_ids que já falharam neste ciclo (ex: sem acesso ao registry).
 	ExcludeMachineIDs []string `json:"exclude_machine_ids,omitempty"`
 	// Limit > 1: também devolve as N melhores ofertas em "offers" (uma por host).
@@ -193,10 +193,10 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results, err := client.Search(r.Context(), providers.SearchRequest{
-		MinVRAM:  targetVram,
-		MinTPS:   targetTps,
-		Metric:   getMetricNameForModel(payload.Model),
-		Model:    payload.Model,
+		MinVRAM:   targetVram,
+		MinTPS:    targetTps,
+		Metric:    getMetricNameForModel(payload.Model),
+		Model:     payload.Model,
 		MinCUDA:   engines.Get(engine).MinCUDA,
 		MinDiskGB: engines.Get(engine).DiskGB,
 		// Só vLLM e ollama dividem o modelo entre GPUs; as demais (ComfyUI,
@@ -272,6 +272,12 @@ func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Conjunto de modelos persistido (fonte de verdade entre restarts).
+	persisted, err := s.db.ListAllInstanceModels()
+	if err != nil {
+		log.Printf("status: failed to load persisted models: %v", err)
+	}
+
 	dbIDs := map[string]bool{}
 	for _, inst := range allInstances {
 		dbIDs[inst.ID] = true
@@ -312,11 +318,17 @@ func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		statusResp.TimeActive = duration.Round(time.Second).String()
 
+		// Modelos/estados: banco + estado vivo (memória vence, é mais recente)
+		act, activeExists := activeMap[inst.ID]
+		var live *ActiveInstance
+		if activeExists {
+			live = &act
+		}
+		statusResp.Models, statusResp.ModelStates = mergeModelStatus(inst, persisted[inst.ID], live)
+
 		// Se está ativa em memória, adiciona dados dinâmicos do túnel e heartbeat
-		if act, activeExists := activeMap[inst.ID]; activeExists {
+		if activeExists {
 			statusResp.LocalPort = act.LocalPort
-			statusResp.Models = act.Models()
-			statusResp.ModelStates = act.ModelStatesCopy()
 			statusResp.ModelProgress = copyMap(act.ModelProgress)
 			if pingTime, pingExists := s.manager.GetLastPing(inst.ID); pingExists {
 				statusResp.LastPing = time.Since(pingTime).Round(time.Second).String() + " ago"
@@ -589,12 +601,12 @@ type ScaleRequestPayload struct {
 }
 
 type ScaleResponsePayload struct {
-	Success      bool     `json:"success"`
-	GroupID      string   `json:"group_id"`
-	Current      int      `json:"current"`
-	Created      []string `json:"created,omitempty"`
-	Removed      []string `json:"removed,omitempty"`
-	InstanceIDs  []string `json:"instance_ids,omitempty"`
+	Success     bool     `json:"success"`
+	GroupID     string   `json:"group_id"`
+	Current     int      `json:"current"`
+	Created     []string `json:"created,omitempty"`
+	Removed     []string `json:"removed,omitempty"`
+	InstanceIDs []string `json:"instance_ids,omitempty"`
 }
 
 func (s *ControlServer) handleScale(w http.ResponseWriter, r *http.Request) {
@@ -752,10 +764,10 @@ func (s *ControlServer) handleStackDown(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":        true,
-		"stack":          payload.Name,
-		"stopped_count":  len(stopped),
-		"stopped":        stopped,
+		"success":       true,
+		"stack":         payload.Name,
+		"stopped_count": len(stopped),
+		"stopped":       stopped,
 	})
 }
 
@@ -872,7 +884,7 @@ func (s *HeartbeatServer) handlePing(w http.ResponseWriter, r *http.Request) {
 
 	// Registra o ping no manager
 	s.manager.RegisterPing(instanceID)
-	
+
 	// Retorna OK para o watchdog remoto saber que estamos vivos
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -956,4 +968,34 @@ func gpuCount(engine string, asked int) int {
 		return single
 	}
 	return asked
+}
+
+// mergeModelStatus combina o conjunto persistido com o estado em memória.
+// Models: principal + extras roteados (memória, se ativa; senão o banco).
+// States: último estado persistido sobreposto pelo estado vivo.
+func mergeModelStatus(inst storage.Instance, rows []storage.InstanceModel, live *ActiveInstance) ([]string, map[string]string) {
+	states := map[string]string{}
+	var models []string
+	if live != nil {
+		models = live.Models()
+	} else if len(rows) > 0 {
+		models = []string{inst.Model}
+	}
+	for _, r := range rows {
+		if r.State != "" {
+			states[r.Model] = r.State
+		}
+		if live == nil && r.Role == storage.RoleExtra && r.Model != inst.Model {
+			models = append(models, r.Model)
+		}
+	}
+	if live != nil {
+		for k, v := range live.ModelStates {
+			states[k] = v
+		}
+	}
+	if len(states) == 0 {
+		states = nil
+	}
+	return models, states
 }

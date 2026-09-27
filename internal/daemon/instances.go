@@ -50,10 +50,12 @@ type ActiveInstance struct {
 	CancelFunc context.CancelFunc
 	// ExtraModels: modelos adicionais servidos pela mesma engine (ollama
 	// mantém vários carregados enquanto couberem na VRAM). O proxy roteia
-	// cada um para esta instância. Só em memória: some num restart.
+	// cada um para esta instância. Persistido em instance_models e restaurado
+	// na reconexão (restoreModels).
 	ExtraModels []string
 	// ModelStates: estado de cada modelo nesta máquina ("loading", "ready",
-	// "failed"), inclusive o alvo de um swap/add ainda baixando. Só em memória.
+	// "failed"), inclusive o alvo de um swap/add ainda baixando. Espelhado em
+	// instance_models (último estado conhecido sobrevive a restarts).
 	ModelStates map[string]string
 	// ModelProgress: última leitura do download de cada modelo (texto curto).
 	ModelProgress map[string]string
@@ -71,6 +73,120 @@ func (m *InstanceManager) setModelState(instID, model, state string) {
 		act.ModelStates = map[string]string{}
 	}
 	act.ModelStates[model] = state
+	// Grava sob o lock: a ordem no banco acompanha a da memória.
+	if m.db != nil {
+		role := storage.RoleAdding
+		if model == act.Model {
+			role = storage.RolePrimary
+		}
+		if err := m.db.SetInstanceModelState(instID, model, role, state); err != nil {
+			log.Printf("[%s] Warning: persist model state %s=%s: %v", instID, model, state, err)
+		}
+	}
+}
+
+// cmdRunner é o que o fluxo de modelos precisa do SSH (fakes nos testes).
+type cmdRunner interface {
+	RunCommand(cmd string) (string, error)
+}
+
+// restoreModels recarrega do banco extras e últimos estados de uma instância
+// que acabou de (re)entrar nos ativos. Devolve as linhas para re-verificação.
+// Chamar sem activesMu.
+func (m *InstanceManager) restoreModels(inst storage.Instance) []storage.InstanceModel {
+	if m.db == nil {
+		return nil
+	}
+	rows, err := m.db.ListInstanceModels(inst.ID)
+	if err != nil {
+		log.Printf("[%s] Warning: could not load persisted models: %v", inst.ID, err)
+		return nil
+	}
+	// Linha do principal garantida (instâncias de antes da tabela não têm).
+	hasPrimary := false
+	for _, r := range rows {
+		hasPrimary = hasPrimary || r.Model == inst.Model
+	}
+	if !hasPrimary && inst.Model != "" {
+		if err := m.db.PutInstanceModel(inst.ID, inst.Model, storage.RolePrimary, ""); err != nil {
+			log.Printf("[%s] Warning: persist primary model: %v", inst.ID, err)
+		}
+	}
+
+	m.activesMu.Lock()
+	act, ok := m.actives[inst.ID]
+	if ok {
+		act.ExtraModels = nil
+		if act.ModelStates == nil {
+			act.ModelStates = map[string]string{}
+		}
+		for _, r := range rows {
+			if r.Role == storage.RoleExtra && r.Model != act.Model {
+				act.ExtraModels = append(act.ExtraModels, r.Model)
+			}
+			if r.State != "" {
+				if _, live := act.ModelStates[r.Model]; !live {
+					act.ModelStates[r.Model] = r.State
+				}
+			}
+		}
+	}
+	m.activesMu.Unlock()
+	if ok && len(rows) > 0 {
+		m.AddLog(inst.ID, fmt.Sprintf("Restored %d persisted model(s) for this instance", len(rows)))
+	}
+	return rows
+}
+
+// resumeModels re-verifica, após a reconexão, os modelos além do principal:
+// extras voltam a "ready" se o comando de prontidão passar; senão o pull
+// (idempotente) é relançado. Alvos de add/swap interrompidos são retomados.
+func (m *InstanceManager) resumeModels(runner cmdRunner, inst storage.Instance, def engines.Definition, rows []storage.InstanceModel) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	for _, r := range rows {
+		if r.Model == inst.Model || r.Role == storage.RolePrimary {
+			continue
+		}
+		if r.Role != storage.RoleExtra && r.State == "failed" {
+			continue // add/swap que já falhou: fica só como registro
+		}
+		wg.Add(1)
+		go func(r storage.InstanceModel) {
+			defer wg.Done()
+			if err := m.ensureModel(runner, inst, def, r.Model); err != nil {
+				m.AddLog(inst.ID, fmt.Sprintf("Recovery warning (%s): %v", r.Model, err))
+				return
+			}
+			switch r.Role {
+			case storage.RoleAdding:
+				m.finishAdd(inst.ID, r.Model)
+			case storage.RoleSwapping:
+				m.finishSwap(inst.ID, r.Model)
+			}
+		}(r)
+	}
+	return &wg
+}
+
+// ensureModel confirma que o modelo está disponível; só relança o pull se o
+// comando de prontidão falhar.
+func (m *InstanceManager) ensureModel(runner cmdRunner, inst storage.Instance, def engines.Definition, model string) error {
+	pull, ready := modelCmds(def, model)
+	if strings.TrimSpace(ready) == "" {
+		m.setModelState(inst.ID, model, "ready")
+		return nil
+	}
+	if _, err := runner.RunCommand(ready); err == nil {
+		m.setModelState(inst.ID, model, "ready")
+		return nil
+	}
+	if strings.TrimSpace(pull) != "" {
+		if _, err := runner.RunCommand(backgroundCmd(model, pull)); err != nil {
+			m.setModelState(inst.ID, model, "failed")
+			return fmt.Errorf("could not relaunch pull: %w", err)
+		}
+	}
+	return m.waitForModelReady(runner, inst, def, model)
 }
 
 // setModelProgress guarda a última leitura de progresso do download.
@@ -104,6 +220,16 @@ func copyMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// closeConn cancela os túneis e fecha o SSH (tolerante a campos nulos).
+func (a *ActiveInstance) closeConn() {
+	if a.CancelFunc != nil {
+		a.CancelFunc()
+	}
+	if a.SSHClient != nil {
+		a.SSHClient.Close()
+	}
 }
 
 // Models devolve o modelo principal seguido dos extras.
@@ -588,6 +714,9 @@ WaitLoop:
 	}
 	m.activesMu.Unlock()
 
+	// K2. Restaura extras/estados persistidos (reconexão após restart)
+	persisted := m.restoreModels(inst)
+
 	// L. Atualiza alvos no load balancer
 	m.updateProxyTargets()
 
@@ -598,23 +727,26 @@ WaitLoop:
 	// O watchdog e os túneis já estão ativos — a instância não vaza se o
 	// daemon morrer durante o download. "Running" só aparece quando o modelo
 	// pode de fato ser consumido.
+	m.resumeModels(sshClient, inst, def, persisted)
 	if err := m.waitForModelReady(sshClient, inst, def, inst.Model); err != nil {
 		m.AddLog(inst.ID, fmt.Sprintf("WARNING: %v", err))
+	} else if _, ready := modelCmds(def, inst.Model); strings.TrimSpace(ready) == "" {
+		m.setModelState(inst.ID, inst.Model, "ready") // sem comando de prontidão
 	}
 
 	// N. Modelo pronto (ou timeout avisado) → marca running no banco E nos
-// ativos em memória (o load balancer filtra pelo status dos ativos)
-inst.Status = "running"
-m.db.SaveInstance(&inst)
+	// ativos em memória (o load balancer filtra pelo status dos ativos)
+	inst.Status = "running"
+	m.db.SaveInstance(&inst)
 
-m.activesMu.Lock()
-if a, ok := m.actives[inst.ID]; ok {
-	a.Status = "running"
-}
-m.activesMu.Unlock()
-m.updateProxyTargets()
+	m.activesMu.Lock()
+	if a, ok := m.actives[inst.ID]; ok {
+		a.Status = "running"
+	}
+	m.activesMu.Unlock()
+	m.updateProxyTargets()
 
-log.Printf("[%s] SUCCESS: Instance fully deployed and ready!", inst.ID)
+	log.Printf("[%s] SUCCESS: Instance fully deployed and ready!", inst.ID)
 }
 
 func (m *InstanceManager) markFailed(inst storage.Instance, reason string) {
@@ -646,8 +778,7 @@ func (m *InstanceManager) failSetup(cfg *config.Config, inst storage.Instance, r
 func (m *InstanceManager) cleanupDeletedInstance(inst storage.Instance) {
 	m.activesMu.Lock()
 	if active, ok := m.actives[inst.ID]; ok {
-		active.CancelFunc()
-		active.SSHClient.Close()
+		active.closeConn()
 		delete(m.actives, inst.ID)
 	}
 	m.activesMu.Unlock()
@@ -667,8 +798,7 @@ func (m *InstanceManager) StopInstance(cfg *config.Config, instanceID string) er
 	active, exists := m.actives[instanceID]
 	if exists {
 		// Cancela os túneis e fecha conexão SSH
-		active.CancelFunc()
-		active.SSHClient.Close()
+		active.closeConn()
 		delete(m.actives, instanceID)
 	}
 	m.activesMu.Unlock()
@@ -705,8 +835,7 @@ func (m *InstanceManager) PauseInstance(cfg *config.Config, instanceID string) e
 	active, exists := m.actives[instanceID]
 	if exists {
 		// Cancela os túneis e fecha conexão SSH
-		active.CancelFunc()
-		active.SSHClient.Close()
+		active.closeConn()
 		delete(m.actives, instanceID)
 	}
 	m.activesMu.Unlock()
@@ -765,13 +894,13 @@ func (m *InstanceManager) ResumeInstance(cfg *config.Config, instanceID string) 
 
 // ScaleResult descreve o plano de ação executado por ScaleGroup.
 type ScaleResult struct {
-	GroupID      string   `json:"group_id"`
-	Engine       string   `json:"engine"`
-	Model        string   `json:"model"`
-	Current      int      `json:"current"`
-	Created      []string `json:"created,omitempty"`
-	Removed      []string `json:"removed,omitempty"`
-	CostPerHour  float64  `json:"cost_per_hour"`
+	GroupID     string   `json:"group_id"`
+	Engine      string   `json:"engine"`
+	Model       string   `json:"model"`
+	Current     int      `json:"current"`
+	Created     []string `json:"created,omitempty"`
+	Removed     []string `json:"removed,omitempty"`
+	CostPerHour float64  `json:"cost_per_hour"`
 }
 
 // ScaleGroup ajusta o número de instâncias ativas de um modelo para `target`.
@@ -871,8 +1000,8 @@ func (m *InstanceManager) activeGroupInstances(groupID string) ([]storage.Instan
 
 // StackResult resume o deploy de um stack.
 type StackResult struct {
-	Name     string                 `json:"name"`
-	Services []StackServiceStatus   `json:"services"`
+	Name     string               `json:"name"`
+	Services []StackServiceStatus `json:"services"`
 }
 
 type StackServiceStatus struct {
@@ -1060,6 +1189,7 @@ func (m *InstanceManager) GetActiveInstances() []ActiveInstance {
 		c := *act
 		c.ModelStates = act.ModelStatesCopy() // os mapas mudam em outras goroutines
 		c.ModelProgress = copyMap(act.ModelProgress)
+		c.ExtraModels = append([]string(nil), act.ExtraModels...)
 		list = append(list, c)
 	}
 	return list
@@ -1088,6 +1218,7 @@ func findWatchdogBinary() ([]byte, error) {
 
 	return nil, fmt.Errorf("openllm-watchdog binary not found. Please build it first")
 }
+
 // ============================================================
 // Swap de modelo em instância rodando (otimização: não re-renta a máquina)
 // ============================================================
@@ -1097,59 +1228,96 @@ func findWatchdogBinary() ([]byte, error) {
 // atualiza o grupo/load balancer. O modelo antigo continua servindo durante
 // o download.
 func (m *InstanceManager) SwapModel(cfg *config.Config, instanceID, newModel string) error {
+	// Snapshot sob o lock: a goroutine não pode ler act.* depois (outro swap
+	// concluído altera Model/GroupID concorrentemente).
 	m.activesMu.RLock()
 	act, exists := m.actives[instanceID]
-	status := ""
-	supportsSwap := false
+	var inst storage.Instance
+	var runner cmdRunner
 	if exists {
-		status = act.Status
-		def := resolveEngineDef(act.Instance)
-		supportsSwap = strings.TrimSpace(def.ModelPullCmd) != ""
+		inst = act.Instance
+		if act.SSHClient != nil { // evita interface não-nil com ponteiro nil
+			runner = act.SSHClient
+		}
 	}
 	m.activesMu.RUnlock()
 
 	if !exists {
 		return fmt.Errorf("instance %s is not active (only running instances can swap)", instanceID)
 	}
-	if status != "running" {
-		return fmt.Errorf("instance %s is not running (status: %s)", instanceID, status)
+	if inst.Status != "running" {
+		return fmt.Errorf("instance %s is not running (status: %s)", instanceID, inst.Status)
 	}
-	if !supportsSwap {
+	if runner == nil {
+		return fmt.Errorf("instance %s has no SSH connection", instanceID)
+	}
+	engineDef := resolveEngineDef(inst)
+	if strings.TrimSpace(engineDef.ModelPullCmd) == "" {
 		return fmt.Errorf("engine does not support model swap (no model_pull_cmd)")
 	}
+	if newModel == inst.Model {
+		return fmt.Errorf("model %s is already the primary model of %s", newModel, instanceID)
+	}
 
-	m.AddLog(instanceID, fmt.Sprintf("Model swap requested: %s -> %s", act.Model, newModel))
+	m.AddLog(instanceID, fmt.Sprintf("Model swap requested: %s -> %s", inst.Model, newModel))
+	// Alvo persistido antes do pull: um restart no meio retoma o swap.
+	m.persistModel(instanceID, newModel, storage.RoleSwapping, "loading")
 
 	go func() {
-		sshClient := act.SSHClient
-		engineDef := resolveEngineDef(act.Instance)
 		full, _ := modelCmds(engineDef, newModel)
-
-		if _, err := sshClient.RunCommand(backgroundCmd(newModel, full)); err != nil {
+		if _, err := runner.RunCommand(backgroundCmd(newModel, full)); err != nil {
+			m.setModelState(instanceID, newModel, "failed")
 			m.AddLog(instanceID, fmt.Sprintf("Swap failed: could not launch pull: %v", err))
 			return
 		}
-
-		if err := m.waitForModelReady(sshClient, act.Instance, engineDef, newModel); err != nil {
+		if err := m.waitForModelReady(runner, inst, engineDef, newModel); err != nil {
 			m.AddLog(instanceID, fmt.Sprintf("Swap warning: %v (check %s)", err, pullLog(newModel)))
 			return
 		}
-
-		// Modelo novo pronto → atualiza estado e load balancer
-		m.activesMu.Lock()
-		if a, ok := m.actives[instanceID]; ok {
-			a.ExtraModels = removeString(a.ExtraModels, newModel)
-			a.Model = newModel
-			a.GroupID = GroupID(a.Engine, newModel)
-			m.db.SaveInstance(&a.Instance)
-		}
-		m.activesMu.Unlock()
-
-		m.updateProxyTargets()
-		m.AddLog(instanceID, fmt.Sprintf("Model swapped to %s — ready!", newModel))
+		m.finishSwap(instanceID, newModel)
 	}()
 
 	return nil
+}
+
+// finishSwap promove newModel a principal (memória + banco na mesma seção
+// crítica; o banco numa transação) e atualiza o load balancer.
+func (m *InstanceManager) finishSwap(instanceID, newModel string) {
+	m.activesMu.Lock()
+	a, ok := m.actives[instanceID]
+	if ok {
+		old := a.Model
+		a.ExtraModels = removeString(a.ExtraModels, newModel)
+		a.Model = newModel
+		a.GroupID = GroupID(a.Engine, newModel)
+		if a.ModelStates == nil {
+			a.ModelStates = map[string]string{}
+		}
+		delete(a.ModelStates, old)
+		delete(a.ModelProgress, old)
+		a.ModelStates[newModel] = "ready"
+		if m.db != nil {
+			if err := m.db.CommitSwap(&a.Instance, old); err != nil {
+				log.Printf("[%s] Warning: persist swap: %v", instanceID, err)
+			}
+		}
+	}
+	m.activesMu.Unlock()
+	if !ok {
+		return
+	}
+	m.updateProxyTargets()
+	m.AddLog(instanceID, fmt.Sprintf("Model swapped to %s — ready!", newModel))
+}
+
+// persistModel grava papel/estado de um modelo (erros só logados).
+func (m *InstanceManager) persistModel(instanceID, model, role, state string) {
+	if m.db == nil {
+		return
+	}
+	if err := m.db.PutInstanceModel(instanceID, model, role, state); err != nil {
+		log.Printf("[%s] Warning: persist model %s: %v", instanceID, model, err)
+	}
 }
 
 // renderEnv substitui {{.Model}} nos valores do Env da engine (ex: OLLAMA_MODEL).
@@ -1174,61 +1342,106 @@ func renderEnv(env map[string]string, model string) map[string]string {
 func (m *InstanceManager) AddModel(instanceID, newModel string) error {
 	m.activesMu.RLock()
 	act, exists := m.actives[instanceID]
-	var status string
-	var def engines.Definition
+	var inst storage.Instance
+	var runner cmdRunner
 	var already bool
 	if exists {
-		status = act.Status
-		def = resolveEngineDef(act.Instance)
+		inst = act.Instance
+		if act.SSHClient != nil { // evita interface não-nil com ponteiro nil
+			runner = act.SSHClient
+		}
 		for _, mdl := range act.Models() {
 			already = already || mdl == newModel
 		}
+		already = already || act.ModelStates[newModel] == "loading" // add/swap em curso
 	}
 	m.activesMu.RUnlock()
 
+	var def engines.Definition
+	if exists {
+		def = resolveEngineDef(inst)
+	}
 	switch {
 	case !exists:
 		return fmt.Errorf("instance %s is not active", instanceID)
-	case status != "running":
-		return fmt.Errorf("instance %s is not running (status: %s)", instanceID, status)
+	case inst.Status != "running":
+		return fmt.Errorf("instance %s is not running (status: %s)", instanceID, inst.Status)
 	case strings.TrimSpace(def.ModelPullCmd) == "":
 		return fmt.Errorf("engine %s does not support multiple models (no model_pull_cmd)", def.Name)
 	case already:
 		return fmt.Errorf("model %s is already served by %s", newModel, instanceID)
+	case runner == nil:
+		return fmt.Errorf("instance %s has no SSH connection", instanceID)
 	}
 
-	m.AddLog(instanceID, fmt.Sprintf("Add model requested: %s (keeps %s)", newModel, act.Model))
+	m.AddLog(instanceID, fmt.Sprintf("Add model requested: %s (keeps %s)", newModel, inst.Model))
+	m.persistModel(instanceID, newModel, storage.RoleAdding, "loading")
 	go func() {
 		full, _ := modelCmds(def, newModel)
-		if _, err := act.SSHClient.RunCommand(backgroundCmd(newModel, full)); err != nil {
+		if _, err := runner.RunCommand(backgroundCmd(newModel, full)); err != nil {
+			m.setModelState(instanceID, newModel, "failed")
 			m.AddLog(instanceID, fmt.Sprintf("Add model failed: could not launch pull: %v", err))
 			return
 		}
-		if err := m.waitForModelReady(act.SSHClient, act.Instance, def, newModel); err != nil {
+		if err := m.waitForModelReady(runner, inst, def, newModel); err != nil {
 			m.AddLog(instanceID, fmt.Sprintf("Add model warning: %v", err))
 			return
 		}
-		m.activesMu.Lock()
-		if a, ok := m.actives[instanceID]; ok {
-			a.ExtraModels = append(removeString(a.ExtraModels, newModel), newModel)
-		}
-		m.activesMu.Unlock()
-		m.updateProxyTargets()
-		m.AddLog(instanceID, fmt.Sprintf("Model %s added — now serving %v", newModel, act.Models()))
+		m.finishAdd(instanceID, newModel)
 	}()
 	return nil
 }
 
-// RemoveModel para de rotear um modelo extra (o principal só sai via swap/stop).
+// finishAdd passa a rotear o modelo e o marca como extra pronto no banco.
+func (m *InstanceManager) finishAdd(instanceID, newModel string) {
+	m.activesMu.Lock()
+	a, ok := m.actives[instanceID]
+	var models []string
+	if ok {
+		if newModel != a.Model {
+			a.ExtraModels = append(removeString(a.ExtraModels, newModel), newModel)
+		}
+		if a.ModelStates == nil {
+			a.ModelStates = map[string]string{}
+		}
+		a.ModelStates[newModel] = "ready"
+		models = a.Models()
+		if m.db != nil && newModel != a.Model {
+			if err := m.db.PromoteExtraModel(instanceID, newModel); err != nil {
+				log.Printf("[%s] Warning: persist extra model %s: %v", instanceID, newModel, err)
+			}
+		}
+	}
+	m.activesMu.Unlock()
+	if !ok {
+		return
+	}
+	m.updateProxyTargets()
+	m.AddLog(instanceID, fmt.Sprintf("Model %s added — now serving %v", newModel, models))
+}
+
+// RemoveModel para de rotear um modelo extra (o principal só sai via swap/stop)
+// e o apaga do conjunto persistido.
 func (m *InstanceManager) RemoveModel(instanceID, model string) error {
 	m.activesMu.Lock()
 	act, ok := m.actives[instanceID]
-	if ok {
+	isPrimary := ok && act.Model == model
+	if ok && !isPrimary {
 		act.ExtraModels = removeString(act.ExtraModels, model)
+		delete(act.ModelStates, model)
+		delete(act.ModelProgress, model)
+		if m.db != nil {
+			if err := m.db.DeleteInstanceModel(instanceID, model); err != nil {
+				log.Printf("[%s] Warning: delete persisted model %s: %v", instanceID, model, err)
+			}
+		}
 	}
 	m.activesMu.Unlock()
 	if !ok {
 		return fmt.Errorf("instance %s is not active", instanceID)
+	}
+	if isPrimary {
+		return fmt.Errorf("model %s is the primary model of %s (use swap or stop)", model, instanceID)
 	}
 	m.updateProxyTargets()
 	m.AddLog(instanceID, fmt.Sprintf("Model %s removed from routing", model))

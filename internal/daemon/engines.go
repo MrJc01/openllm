@@ -40,12 +40,19 @@ func (m *InstanceManager) setupEngine(sshClient *ssh.SSHClient, inst storage.Ins
 // O pull roda fire-and-forget no host remoto (nohup + log em arquivo):
 // canais SSH interativos morrem em downloads longos e não há como reanexá-los.
 func (m *InstanceManager) startEngine(sshClient *ssh.SSHClient, inst storage.Instance, def engines.Definition) error {
-	full, _ := modelCmds(def, inst.Model)
+	full, ready := modelCmds(def, inst.Model)
 	if strings.TrimSpace(full) == "" {
 		return nil
 	}
 
 	go func() {
+		// Reconexão: modelo já presente no host não é baixado de novo.
+		if strings.TrimSpace(ready) != "" {
+			if _, err := sshClient.RunCommand(ready); err == nil {
+				m.AddLog(inst.ID, fmt.Sprintf("Model %s already present on host — skipping pull", inst.Model))
+				return
+			}
+		}
 		background := backgroundCmd(inst.Model, full)
 		if _, err := sshClient.RunCommand(background); err != nil {
 			log.Printf("[%s] Failed to launch background model pull: %v", inst.ID, err)
@@ -64,7 +71,7 @@ func (m *InstanceManager) startEngine(sshClient *ssh.SSHClient, inst storage.Ins
 // aborta o deploy — só avisa (o modelo pode ser grande, mas o túnel já está vivo).
 // waitForModelReady espera o MODELO INFORMADO ficar disponível (não inst.Model —
 // durante um swap o modelo alvo é diferente do atual da instância).
-func (m *InstanceManager) waitForModelReady(sshClient *ssh.SSHClient, inst storage.Instance, def engines.Definition, targetModel string) error {
+func (m *InstanceManager) waitForModelReady(sshClient cmdRunner, inst storage.Instance, def engines.Definition, targetModel string) error {
 	_, full := modelCmds(def, targetModel)
 	if strings.TrimSpace(full) == "" {
 		return nil
@@ -148,9 +155,10 @@ func effectiveRemotePort(def engines.Definition, cfg *config.Config, engine stri
 	}
 	return remotePortForEngine(cfg, engine)
 }
+
 // warmupModel carrega o modelo na GPU antes de declarar a instância pronta.
 // Falha não é fatal: o modelo carrega na 1ª requisição, só mais devagar.
-func (m *InstanceManager) warmupModel(sshClient *ssh.SSHClient, inst storage.Instance, def engines.Definition, model string) {
+func (m *InstanceManager) warmupModel(sshClient cmdRunner, inst storage.Instance, def engines.Definition, model string) {
 	cmd := strings.TrimSpace(def.WarmupCmd)
 	if cmd == "" {
 		return

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -32,9 +33,10 @@ func TestWatchdogScriptPings(t *testing.T) {
 	if _, err := exec.LookPath("curl"); err != nil {
 		t.Skip("curl não disponível")
 	}
-	up := true
+	var up atomic.Bool // lido pelo handler em outra goroutine
+	up.Store(true)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !up {
+		if !up.Load() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
@@ -55,7 +57,7 @@ func TestWatchdogScriptPings(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(700 * time.Millisecond)
-	up = false
+	up.Store(false)
 	time.Sleep(700 * time.Millisecond)
 	cmd.Process.Kill()
 	cmd.Wait()

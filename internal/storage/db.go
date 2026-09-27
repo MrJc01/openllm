@@ -12,19 +12,19 @@ import (
 )
 
 type Instance struct {
-	ID          string    `json:"id"`
-	Provider    string    `json:"provider"`
-	MachineID   string    `json:"machine_id"`
-	GPU         string    `json:"gpu"`
-	GPUCount    int       `json:"gpu_count"`
-	VRAM        float64   `json:"vram"`
-	CostPerHour float64   `json:"cost_per_hour"`
-	SSHHost     string    `json:"ssh_host"`
-	SSHPort     int       `json:"ssh_port"`
-	Status      string    `json:"status"` // "deploying", "running", "stopped", "failed"
-	Model       string    `json:"model"`
-	Engine      string    `json:"engine"` // "ollama" (default), "localai"
-	GroupID     string    `json:"group_id,omitempty"`
+	ID          string  `json:"id"`
+	Provider    string  `json:"provider"`
+	MachineID   string  `json:"machine_id"`
+	GPU         string  `json:"gpu"`
+	GPUCount    int     `json:"gpu_count"`
+	VRAM        float64 `json:"vram"`
+	CostPerHour float64 `json:"cost_per_hour"`
+	SSHHost     string  `json:"ssh_host"`
+	SSHPort     int     `json:"ssh_port"`
+	Status      string  `json:"status"` // "deploying", "running", "stopped", "failed"
+	Model       string  `json:"model"`
+	Engine      string  `json:"engine"` // "ollama" (default), "localai"
+	GroupID     string  `json:"group_id,omitempty"`
 	// EngineDefJSON preserva a Definition da engine usada no deploy (engines
 	// custom/externas sobrevivem a restarts do daemon).
 	EngineDefJSON string     `json:"engine_def,omitempty"`
@@ -35,9 +35,9 @@ type Instance struct {
 // Group representa um grupo de escala: um modelo em N instâncias, com as
 // rotas do proxy (stacks multimodais) associadas.
 type Group struct {
-	ID     string    `json:"id"` // "engine/model"
-	Stack  string    `json:"stack,omitempty"`
-	Routes []string  `json:"routes,omitempty"`
+	ID        string    `json:"id"` // "engine/model"
+	Stack     string    `json:"stack,omitempty"`
+	Routes    []string  `json:"routes,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -116,6 +116,17 @@ func (s *DB) initSchema() error {
 			created_at DATETIME,
 			stopped_at DATETIME
 		);`,
+		// instance_models: conjunto de modelos servidos por instância (principal,
+		// extras e alvos de add/swap em andamento) e o último estado conhecido.
+		// Tabela nova (IF NOT EXISTS): bancos antigos migram sem perda.
+		`CREATE TABLE IF NOT EXISTS instance_models (
+			instance_id TEXT NOT NULL,
+			model TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'extra',
+			state TEXT NOT NULL DEFAULT '',
+			updated_at DATETIME,
+			PRIMARY KEY (instance_id, model)
+		);`,
 		`CREATE TABLE IF NOT EXISTS groups (
 			id TEXT PRIMARY KEY,
 			stack TEXT,
@@ -164,7 +175,7 @@ func (s *DB) SaveProfile(p *Profile) error {
 func (s *DB) GetProfile(name string) (*Profile, error) {
 	query := `SELECT id, name, provider, model, tps_target, instances_count, created_at FROM profiles WHERE name = ?`
 	row := s.db.QueryRow(query, name)
-	
+
 	var p Profile
 	err := row.Scan(&p.ID, &p.Name, &p.Provider, &p.Model, &p.TpsTarget, &p.InstancesCount, &p.CreatedAt)
 	if err == sql.ErrNoRows {
@@ -264,6 +275,10 @@ func (s *DB) DeleteGroup(id string) error {
 // --- Operações de Instâncias ---
 
 func (s *DB) SaveInstance(inst *Instance) error {
+	return saveInstance(s.db, inst)
+}
+
+func saveInstance(e execer, inst *Instance) error {
 	query := `INSERT OR REPLACE INTO instances (id, provider, machine_id, gpu, gpu_count, vram, cost_per_hour, ssh_host, ssh_port, status, model, engine, group_id, def_json, created_at, stopped_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
@@ -277,13 +292,15 @@ func (s *DB) SaveInstance(inst *Instance) error {
 		engine = "ollama"
 	}
 
-	_, err := s.db.Exec(query, inst.ID, inst.Provider, inst.MachineID, inst.GPU, inst.GPUCount, inst.VRAM, inst.CostPerHour, inst.SSHHost, inst.SSHPort, inst.Status, inst.Model, engine, inst.GroupID, inst.EngineDefJSON, inst.CreatedAt, stoppedAtVal)
+	_, err := e.Exec(query, inst.ID, inst.Provider, inst.MachineID, inst.GPU, inst.GPUCount, inst.VRAM, inst.CostPerHour, inst.SSHHost, inst.SSHPort, inst.Status, inst.Model, engine, inst.GroupID, inst.EngineDefJSON, inst.CreatedAt, stoppedAtVal)
 	return err
 }
 
 const instanceCols = `id, provider, machine_id, gpu, gpu_count, vram, cost_per_hour, ssh_host, ssh_port, status, model, engine, group_id, def_json, created_at, stopped_at`
 
-func scanInstance(scanner interface{ Scan(dest ...interface{}) error }) (*Instance, error) {
+func scanInstance(scanner interface {
+	Scan(dest ...interface{}) error
+}) (*Instance, error) {
 	var inst Instance
 	var stoppedAtVal sql.NullTime
 	err := scanner.Scan(&inst.ID, &inst.Provider, &inst.MachineID, &inst.GPU, &inst.GPUCount, &inst.VRAM, &inst.CostPerHour, &inst.SSHHost, &inst.SSHPort, &inst.Status, &inst.Model, &inst.Engine, &inst.GroupID, &inst.EngineDefJSON, &inst.CreatedAt, &stoppedAtVal)
@@ -353,8 +370,25 @@ func (s *DB) listInstances(query string, arg interface{}) ([]Instance, error) {
 	return instances, rows.Err()
 }
 
+// DeleteInstance remove a instância e seus modelos na mesma transação.
 func (s *DB) DeleteInstance(id string) error {
-	query := `DELETE FROM instances WHERE id = ?`
-	_, err := s.db.Exec(query, id)
-	return err
+	return s.withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM instance_models WHERE instance_id = ?`, id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`DELETE FROM instances WHERE id = ?`, id)
+		return err
+	})
+}
+
+func (s *DB) withTx(fn func(tx *sql.Tx) error) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
