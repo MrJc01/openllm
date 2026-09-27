@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/crom-org/openllm/internal/config"
 	"github.com/crom-org/openllm/internal/engines"
+	"github.com/crom-org/openllm/internal/httpsec"
 	"github.com/crom-org/openllm/internal/models"
 	"github.com/crom-org/openllm/internal/providers"
 	"github.com/crom-org/openllm/internal/proxy"
@@ -24,6 +26,7 @@ type ControlServer struct {
 	manager *InstanceManager
 	db      *storage.DB
 	server  *http.Server
+	guard   *httpsec.Guard
 }
 
 func NewControlServer(port int, manager *InstanceManager, db *storage.DB) *ControlServer {
@@ -34,7 +37,8 @@ func NewControlServer(port int, manager *InstanceManager, db *storage.DB) *Contr
 	}
 }
 
-func (s *ControlServer) Start(ctx context.Context) error {
+// Handler devolve as rotas da API já protegidas pelo guard.
+func (s *ControlServer) Handler() (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/search", s.handleSearch)
@@ -54,9 +58,20 @@ func (s *ControlServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/resume", s.handleResume)
 	mux.HandleFunc("/logs", s.handleLogs)
 
+	if s.guard == nil || s.guard.Token == "" {
+		return nil, fmt.Errorf("control API: refusing to start without an API token (%s)", httpsec.TokenEnv)
+	}
+	return s.guard.Wrap(mux), nil
+}
+
+func (s *ControlServer) Start(ctx context.Context) error {
+	h, err := s.Handler()
+	if err != nil {
+		return err
+	}
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", s.port),
-		Handler: mux,
+		Handler: h,
 	}
 
 	log.Printf("Starting openllmd control API on http://127.0.0.1:%d...", s.port)
@@ -66,7 +81,7 @@ func (s *ControlServer) Start(ctx context.Context) error {
 		s.server.Shutdown(context.Background())
 	}()
 
-	err := s.server.ListenAndServe()
+	err = s.server.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
 	}
@@ -346,6 +361,12 @@ func (s *ControlServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// ControlMaxBody: limite de corpo das requisições da API de controle.
+const ControlMaxBody = 1 << 20
+
+// SetGuard define a proteção (token/Host/Origin/JSON/limite) da API.
+func (s *ControlServer) SetGuard(g *httpsec.Guard) { s.guard = g }
+
 type DeployRequestPayload struct {
 	MachineID    string   `json:"machine_id"`
 	Model        string   `json:"model"`
@@ -354,6 +375,9 @@ type DeployRequestPayload struct {
 	CustomImage  string   `json:"custom_image,omitempty"`
 	CustomCmd    string   `json:"custom_cmd,omitempty"`
 	CustomPort   int      `json:"custom_port,omitempty"`
+	// MaxCostPerHour: teto de preço; o preço atual da oferta é reconferido
+	// imediatamente antes do aluguel (tolerância de 5%). 0 = sem teto.
+	MaxCostPerHour float64 `json:"max_cost_per_hour,omitempty"`
 }
 
 func (s *ControlServer) handleDeploy(w http.ResponseWriter, r *http.Request) {
@@ -397,6 +421,14 @@ func (s *ControlServer) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		}
 
 		instanceID, err := s.manager.DeployInstance(cfg, payload)
+		if errors.Is(err, providers.ErrPriceAboveMax) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		if errors.Is(err, ErrCustomDisabled) {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to deploy: %v", err), http.StatusInternalServerError)
 			return
@@ -878,9 +910,19 @@ func (s *HeartbeatServer) Start(ctx context.Context) error {
 }
 
 func (s *HeartbeatServer) handlePing(w http.ResponseWriter, r *http.Request) {
+	// Sem token (chega pelo túnel reverso das máquinas alugadas): só GET /ping
+	// de uma instância que o daemon conhece.
+	if r.Method != http.MethodGet || r.URL.Path != "/ping" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	instanceID := r.URL.Query().Get("instance_id")
 	if instanceID == "" {
 		http.Error(w, "missing instance_id parameter", http.StatusBadRequest)
+		return
+	}
+	if !s.manager.KnownInstance(instanceID) {
+		http.Error(w, "unknown instance", http.StatusNotFound)
 		return
 	}
 

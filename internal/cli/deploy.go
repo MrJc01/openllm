@@ -33,6 +33,7 @@ var (
 	deployCustomImage string
 	deployCustomCmd   string
 	deployCustomPort  int
+	deployMaxCost     float64
 )
 
 var deployCmd = &cobra.Command{
@@ -205,6 +206,9 @@ var deployCmd = &cobra.Command{
 		if deployCustomPort > 0 {
 			payload["custom_port"] = deployCustomPort
 		}
+		if deployMaxCost > 0 {
+			payload["max_cost_per_hour"] = deployMaxCost // daemon reconfere antes de alugar
+		}
 		jsonBytes, _ := json.Marshal(payload)
 
 		color.Cyan("Contacting openllmd daemon at http://127.0.0.1:%d...", cfg.LocalDaemonPort)
@@ -311,5 +315,6 @@ func init() {
 	deployCmd.Flags().StringVar(&deployCaps, "capabilities", "", "Comma-separated capabilities for engine resolution (text,image,audio,video)")
 	deployCmd.Flags().StringVar(&deployCustomImage, "custom-image", "", "Arbitrary docker image to deploy (runs ANY system)")
 	deployCmd.Flags().StringVar(&deployCustomCmd, "custom-cmd", "", "Start command for the custom image (supports {{.Model}})")
+	deployCmd.Flags().Float64Var(&deployMaxCost, "max-cost", 0, "Abort if the offer's current price exceeds this $/h (+5% tolerance)")
 	deployCmd.Flags().IntVar(&deployCustomPort, "custom-port", 0, "Port the custom image listens on (default 8080)")
 }

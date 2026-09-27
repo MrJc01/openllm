@@ -15,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/crom-org/openllm/internal/httpsec"
 )
 
 // TargetType distingue entre backends locais (SSH tunnel) e remotos (API externa).
@@ -78,10 +80,53 @@ type ProxyServer struct {
 	inFlight   map[string]*int64 // conexões em voo por InstanceID
 	inFlightMu sync.RWMutex
 
-	healthy   map[string]bool // InstanceID → saudável (default true)
-	healthMu  sync.RWMutex
+	healthy  map[string]bool // InstanceID → saudável (default true)
+	healthMu sync.RWMutex
 
 	server *http.Server
+
+	// listenAddr: endereço de escuta (default 127.0.0.1:porta). guard:
+	// token/Host/Origin/limite de corpo — obrigatório para Start.
+	listenAddr string
+	guard      *httpsec.Guard
+}
+
+// ProxyMaxBody: limite de corpo do proxy (mídia em base64 cabe folgado).
+const ProxyMaxBody = 64 << 20
+
+// SetSecurity define o endereço de escuta ("" = 127.0.0.1:porta) e o guard.
+func (p *ProxyServer) SetSecurity(listen string, g *httpsec.Guard) {
+	p.listenAddr, p.guard = listen, g
+}
+
+// Handler devolve o mux do proxy já protegido pelo guard (se houver).
+func (p *ProxyServer) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tags", p.handleTags)
+	mux.HandleFunc("/api/generate", p.handleProxy)
+	mux.HandleFunc("/api/chat", p.handleProxy)
+	mux.HandleFunc("/api/embeddings", p.handleProxy)
+	mux.HandleFunc("/v1/chat/completions", p.handleProxy) // OpenAI compat
+	mux.HandleFunc("/", p.handleProxy)
+	if p.guard == nil {
+		return mux
+	}
+	return p.guard.Wrap(mux)
+}
+
+// ListenAddr resolve o endereço efetivo e recusa configurações inseguras.
+func (p *ProxyServer) ListenAddr() (string, error) {
+	addr := p.listenAddr
+	if addr == "" {
+		addr = fmt.Sprintf("127.0.0.1:%d", p.localProxyPort)
+	}
+	if p.guard == nil || p.guard.Token == "" {
+		return "", fmt.Errorf("proxy: refusing to start without an API token (%s)", httpsec.TokenEnv)
+	}
+	if !httpsec.IsLoopbackAddr(addr) {
+		log.Printf("WARNING: proxy listening on non-loopback address %s (token required on every request)", addr)
+	}
+	return addr, nil
 }
 
 func NewProxyServer(port int) *ProxyServer {
@@ -398,28 +443,23 @@ func (p *ProxyServer) pick(pool []Target, model string, _ string) Target {
 }
 
 func (p *ProxyServer) Start(ctx context.Context) error {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/api/tags", p.handleTags)
-	mux.HandleFunc("/api/generate", p.handleProxy)
-	mux.HandleFunc("/api/chat", p.handleProxy)
-	mux.HandleFunc("/api/embeddings", p.handleProxy)
-	mux.HandleFunc("/v1/chat/completions", p.handleProxy) // OpenAI compat
-	mux.HandleFunc("/", p.handleProxy)
-
+	addr, err := p.ListenAddr()
+	if err != nil {
+		return err
+	}
 	p.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", p.localProxyPort),
-		Handler: mux,
+		Addr:    addr,
+		Handler: p.Handler(),
 	}
 
-	log.Printf("Starting Ollama proxy server on :%d...", p.localProxyPort)
+	log.Printf("Starting Ollama proxy server on %s...", addr)
 
 	go func() {
 		<-ctx.Done()
 		p.server.Shutdown(context.Background())
 	}()
 
-	err := p.server.ListenAndServe()
+	err = p.server.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
 	}

@@ -165,3 +165,13 @@ func Default() *Provider { return defaultProvider }
 func init() {
 	providers.RegisterCompute(defaultProvider)
 }
+// OfferPrice devolve o preço da oferta no catálogo fictício (0.35 se desconhecida).
+func (p *Provider) OfferPrice(ctx context.Context, machineID, apiKey string) (float64, error) {
+	offers, _ := p.Search(ctx, providers.SearchRequest{})
+	for _, o := range offers {
+		if o.ID == machineID {
+			return o.CostPerHour, nil
+		}
+	}
+	return 0.35, nil
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -181,6 +182,25 @@ func NewInstanceManager(db *storage.DB, ps *proxy.ProxyServer) *InstanceManager 
 	}
 }
 
+// ErrCustomDisabled: custom_image/custom_cmd exigem OPENLLM_ALLOW_CUSTOM=1.
+var ErrCustomDisabled = errors.New("custom_image/custom_cmd are disabled (set OPENLLM_ALLOW_CUSTOM=1 on the daemon to enable)")
+
+// KnownInstance: instância ativa em memória ou deploying/running no banco
+// (o heartbeat só aceita pings dessas).
+func (m *InstanceManager) KnownInstance(id string) bool {
+	m.activesMu.RLock()
+	_, ok := m.actives[id]
+	m.activesMu.RUnlock()
+	if ok {
+		return true
+	}
+	if m.db == nil {
+		return false
+	}
+	inst, err := m.db.GetInstance(id)
+	return err == nil && inst != nil && (inst.Status == "deploying" || inst.Status == "running")
+}
+
 // GroupID deriva o identificador canônico do grupo de escala: engine/model.
 func GroupID(engine, model string) string {
 	return engine + "/" + model
@@ -287,6 +307,9 @@ func (m *InstanceManager) DeployInstance(cfg *config.Config, payload DeployReque
 	if payload.Engine == "" {
 		payload.Engine = "ollama"
 	}
+	if (payload.CustomImage != "" || payload.CustomCmd != "") && os.Getenv("OPENLLM_ALLOW_CUSTOM") != "1" {
+		return "", ErrCustomDisabled
+	}
 
 	client, ok := providers.GetCompute(cfg.Provider)
 	if !ok {
@@ -316,6 +339,21 @@ func (m *InstanceManager) DeployInstance(cfg *config.Config, payload DeployReque
 		Engine:     engineDef.Name,
 		Env:        renderEnv(engineDef.Env, payload.Model),
 		DiskGB:     engineDef.DiskGB,
+	}
+
+	// Preço reconferido imediatamente antes do aluguel (ofertas mudam de preço).
+	if payload.MaxCostPerHour > 0 {
+		pricer, ok := client.(providers.OfferPricer)
+		if !ok {
+			return "", fmt.Errorf("provider %s cannot verify offer price for max_cost_per_hour", cfg.Provider)
+		}
+		price, err := pricer.OfferPrice(ctx, payload.MachineID, cfg.ActiveAPIKey())
+		if err != nil {
+			return "", fmt.Errorf("could not verify offer price: %w", err)
+		}
+		if err := providers.CheckOfferPrice(price, payload.MaxCostPerHour); err != nil {
+			return "", err
+		}
 	}
 
 	log.Printf("Starting deploy on %s for machine %s, model %s, engine %s...", cfg.Provider, payload.MachineID, payload.Model, engineDef.Name)

@@ -15,6 +15,7 @@ import (
 	"github.com/crom-org/openllm/internal/config"
 	"github.com/crom-org/openllm/internal/daemon"
 	"github.com/crom-org/openllm/internal/engines"
+	"github.com/crom-org/openllm/internal/httpsec"
 	_ "github.com/crom-org/openllm/internal/providers/mock"
 	_ "github.com/crom-org/openllm/internal/providers/openrouter"
 	_ "github.com/crom-org/openllm/internal/providers/vastai"
@@ -57,6 +58,14 @@ func main() {
 		}
 	}
 	log.Println("Starting openllmd daemon...")
+
+	// Token da API local: gerado e gravado no .env (0600) na 1ª execução.
+	if _, generated, err := httpsec.EnsureToken(".env"); err != nil {
+		log.Fatalf("Failed to set up %s: %v", httpsec.TokenEnv, err)
+	} else if generated {
+		abs, _ := filepath.Abs(".env")
+		log.Printf("Generated new %s and saved it to %s", httpsec.TokenEnv, abs)
+	}
 
 	// Engines externas: manifests JSON em ./engines/ e .openllm/engines/
 	loaded := engines.LoadExternal("engines", ".openllm/engines")

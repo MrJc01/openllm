@@ -3,12 +3,14 @@ package daemon
 import (
 	"context"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/crom-org/openllm/internal/config"
+	"github.com/crom-org/openllm/internal/httpsec"
 	"github.com/crom-org/openllm/internal/providers"
 	"github.com/crom-org/openllm/internal/proxy"
 	"github.com/crom-org/openllm/internal/ssh"
@@ -31,9 +33,13 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 		return nil, err
 	}
 
+	// Token compartilhado (OPENLLM_API_TOKEN) protege controle e proxy.
+	token := os.Getenv(httpsec.TokenEnv)
 	ps := proxy.NewProxyServer(cfg.LocalProxyPort)
+	ps.SetSecurity(os.Getenv("OPENLLM_PROXY_LISTEN"), httpsec.NewGuard(token, proxy.ProxyMaxBody, false))
 	mgr := NewInstanceManager(db, ps)
 	ctrl := NewControlServer(cfg.LocalDaemonPort, mgr, db)
+	ctrl.SetGuard(httpsec.NewGuard(token, ControlMaxBody, true))
 	hb := NewHeartbeatServer(cfg.HeartbeatPort, mgr)
 	as := NewAutoscaler(cfg, db, mgr, ps)
 

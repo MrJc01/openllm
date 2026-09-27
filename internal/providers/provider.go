@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -64,6 +65,26 @@ type DeployRequest struct {
 	// DiskGB é o tamanho de disco (GB) solicitado ao provedor.
 	// 0 = usa o default do provedor (35GB no Vast.ai).
 	DiskGB float64
+}
+
+// ErrPriceAboveMax: o preço atual da oferta passou do teto pedido.
+var ErrPriceAboveMax = errors.New("offer price above max_cost_per_hour")
+
+// PriceTolerance: folga sobre max_cost_per_hour antes de recusar o aluguel.
+const PriceTolerance = 1.05
+
+// OfferPricer é implementado por provedores que conseguem consultar o preço
+// atual de uma oferta (reconferido imediatamente antes do aluguel).
+type OfferPricer interface {
+	OfferPrice(ctx context.Context, machineID, apiKey string) (float64, error)
+}
+
+// CheckOfferPrice recusa (ErrPriceAboveMax) se price > max*PriceTolerance.
+func CheckOfferPrice(price, max float64) error {
+	if max > 0 && price > max*PriceTolerance {
+		return fmt.Errorf("%w: current $%.4f/h > max $%.4f/h (+5%%)", ErrPriceAboveMax, price, max)
+	}
+	return nil
 }
 
 // InstanceInfo representa uma instância de GPU em execução
