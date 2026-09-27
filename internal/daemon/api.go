@@ -103,6 +103,12 @@ type SearchRequestPayload struct {
 	ExcludeMachineIDs []string `json:"exclude_machine_ids,omitempty"`
 	// Limit > 1: também devolve as N melhores ofertas em "offers" (uma por host).
 	Limit int `json:"limit,omitempty"`
+	// MinVRAM: pede placas maiores que o mínimo do modelo (faixa escolhida no painel).
+	MinVRAM float64 `json:"min_vram,omitempty"`
+	// GPUName: só esta placa (ex: "H100 SXM").
+	GPUName string `json:"gpu_name,omitempty"`
+	// NumGPUs: nº exato de placas (escolhido na lista de placas do painel).
+	NumGPUs int `json:"num_gpus,omitempty"`
 }
 
 type SearchResponsePayload struct {
@@ -170,6 +176,10 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		targetVram = entry.VRAMGB
 	}
 
+	if payload.MinVRAM > targetVram {
+		targetVram = payload.MinVRAM
+	}
+
 	// TPS só para texto
 	targetTps := 0.0
 	if entry, ok := models.ResolveCatalog(payload.Model); ok && entry.Modality == "text" {
@@ -191,7 +201,8 @@ func (s *ControlServer) handleSearch(w http.ResponseWriter, r *http.Request) {
 		MinDiskGB: engines.Get(engine).DiskGB,
 		// Só vLLM e ollama dividem o modelo entre GPUs; as demais (ComfyUI,
 		// servidores de áudio) usam uma placa: a VRAM tem que caber nela.
-		GPUCount: singleGPU(engine),
+		GPUCount: gpuCount(engine, payload.NumGPUs),
+		GPUName:  payload.GPUName,
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("search failed: %v", err), http.StatusInternalServerError)
@@ -936,4 +947,13 @@ func topOffers(best providers.Machine, all []providers.Machine, limit int, conv 
 		}
 	}
 	return out
+}
+
+// gpuCount: o nº pedido no painel vale para vLLM/ollama (dividem o modelo);
+// as demais engines usam uma placa só.
+func gpuCount(engine string, asked int) int {
+	if single := singleGPU(engine); single == 1 || asked <= 0 {
+		return single
+	}
+	return asked
 }

@@ -83,6 +83,22 @@ func (c *Client) Search(ctx context.Context, req providers.SearchRequest) ([]pro
 	if req.MinDiskGB > 0 {
 		payload["disk_space"] = map[string]interface{}{"gte": req.MinDiskGB}
 	}
+	// VRAM na própria consulta (em MB): sem isso as 100 ofertas mais baratas
+	// eram quase todas pequenas e modelos grandes ficavam sem candidatas.
+	// 0,93: placas "24 GB" aparecem com 22,5–24 GB na Vast.
+	if req.MinVRAM > 0 {
+		field := "gpu_total_ram"
+		if req.GPUCount == 1 {
+			field = "gpu_ram"
+		}
+		payload[field] = map[string]interface{}{"gte": req.MinVRAM * 1024 * 0.93}
+	}
+	if req.GPUCount > 0 {
+		payload["num_gpus"] = map[string]interface{}{"eq": req.GPUCount}
+	}
+	if req.GPUName != "" {
+		payload["gpu_name"] = map[string]interface{}{"eq": req.GPUName}
+	}
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {

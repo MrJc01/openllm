@@ -22,6 +22,8 @@ type SearchRequest struct {
 	MinCUDA float64
 	// MinDiskGB: disco livre mínimo no host para imagem + modelo.
 	MinDiskGB float64
+	// GPUName: só esta placa (nome da Vast, ex: "H100 SXM"); vazio = qualquer.
+	GPUName string
 }
 
 // Machine representa uma oferta de GPU disponível para aluguel

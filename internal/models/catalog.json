@@ -463,7 +463,7 @@
       ],
       "workflow": "trellis2.json",
       "size_gb": 9.4,
-      "ready_min": 5
+      "ready_min": 7.5
     },
     "kokoro": {
       "engine": "kokoro",
@@ -495,7 +495,7 @@
       ],
       "serve_as": "deepdml/faster-whisper-large-v3-turbo-ct2",
       "size_gb": 1.6,
-      "ready_min": 11
+      "ready_min": 3.5
     },
     "qwen3.8:27b": {
       "engine": "ollama",
